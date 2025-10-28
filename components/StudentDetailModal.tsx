@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student, EvaluationsState, Service, StudentGroupAssignments, EvaluationItemScore, StudentPracticalExam, TheoreticalExamGrades, Interview, Annotation, CourseGrades, CourseModuleGrades } from '../types';
 import { CloseIcon, PencilIcon, PlusIcon } from './icons';
-import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES } from '../constants';
+import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS } from '../constants';
 
 
 // Helper function to safely parse JSON from localStorage
@@ -121,8 +121,31 @@ const PracticalHistoryTab: React.FC<{ student: Student; evaluations: Evaluations
                                             {preServiceEval.attendance === 'present' ? 'Presente' : 'Ausente'}
                                         </span>
                                     </p>
+                                    
+                                    {preServiceEval.attendance === 'present' && preServiceEval.behaviorScores && (
+                                        <div className="pt-2 mt-2 border-t">
+                                            <p className="font-semibold mb-1">Evaluación de Conducta:</p>
+                                            <ul className="space-y-1 text-xs">
+                                                {PRE_SERVICE_BEHAVIOR_ITEMS.map(item => {
+                                                    const score = preServiceEval.behaviorScores?.[item.id];
+                                                    const level = score ? BEHAVIOR_SCORE_LEVELS.find(l => l.value === score) : null;
+                                                    return (
+                                                        <li key={item.id} className="flex justify-between items-center">
+                                                            <span className="text-gray-600">{item.text}</span>
+                                                            {level ? (
+                                                                <span className={`px-2 py-0.5 font-semibold rounded-full ${level.color}`}>{level.label}</span>
+                                                            ) : (
+                                                                <span className="px-2 py-0.5 font-semibold rounded-full bg-gray-200 text-gray-500">N/A</span>
+                                                            )}
+                                                        </li>
+                                                    )
+                                                })}
+                                            </ul>
+                                        </div>
+                                    )}
+
                                     <div>
-                                        <p className="font-semibold">Observación:</p>
+                                        <p className="font-semibold mt-2">Observación:</p>
                                         <p className="text-gray-700 whitespace-pre-wrap">{preServiceEval.observation || <i className="text-gray-400">Sin observación.</i>}</p>
                                     </div>
                                 </div>

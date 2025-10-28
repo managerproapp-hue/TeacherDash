@@ -1,9 +1,12 @@
 
 
 
+
+
+
 import React, { useState, useMemo, useCallback } from 'react';
-import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, Annotation, PreServiceGroupEvaluation, PreServiceIndividualEvaluation } from '../types';
-import { GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS } from '../constants';
+import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, Annotation, PreServiceGroupEvaluation, PreServiceIndividualEvaluation, BehaviorScore } from '../types';
+import { GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS } from '../constants';
 import { BackIcon, CheckIcon, DownloadIcon } from './icons';
 import { exportToExcel, downloadPdfWithTables } from './printUtils';
 
@@ -155,10 +158,44 @@ const EvaluationForm: React.FC<{
             const newEvals = { ...prev };
             const index = newEvals.preServiceIndividual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
             if (index > -1) {
-                newEvals.preServiceIndividual[index] = { ...newEvals.preServiceIndividual[index], attendance };
+                const updatedEval = { ...newEvals.preServiceIndividual[index], attendance };
+                if (attendance === 'absent') {
+                    delete updatedEval.behaviorScores;
+                }
+                newEvals.preServiceIndividual[index] = updatedEval;
             } else {
                 newEvals.preServiceIndividual.push({ serviceId: service.id, studentNre, attendance, observation: '' });
             }
+            return newEvals;
+        });
+    };
+
+    const handlePreServiceBehaviorChange = (studentNre: string, itemId: string, score: BehaviorScore) => {
+        setEvaluations(prev => {
+            const newEvals = { ...prev };
+            const index = newEvals.preServiceIndividual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
+            
+            let targetEval: PreServiceIndividualEvaluation;
+            if (index > -1) {
+                targetEval = { ...newEvals.preServiceIndividual[index] };
+                newEvals.preServiceIndividual[index] = targetEval;
+            } else {
+                targetEval = { serviceId: service.id, studentNre, attendance: 'present', observation: '' };
+                newEvals.preServiceIndividual.push(targetEval);
+            }
+    
+            if (targetEval.attendance === 'present') {
+                const currentScores = targetEval.behaviorScores ? { ...targetEval.behaviorScores } : {};
+                
+                if (currentScores[itemId] === score) {
+                    delete currentScores[itemId];
+                } else {
+                    currentScores[itemId] = score;
+                }
+                
+                targetEval.behaviorScores = currentScores;
+            }
+    
             return newEvals;
         });
     };
@@ -351,13 +388,40 @@ const EvaluationForm: React.FC<{
                                                                 </label>
                                                             </div>
                                                             {isPresent && (
-                                                                <textarea
-                                                                    value={preServiceIndEval?.observation || ''}
-                                                                    onChange={e => handlePreServiceIndividualObservationChange(student.nre, e.target.value)}
-                                                                    placeholder="Anotaciones individuales sobre el alumno..."
-                                                                    rows={2}
-                                                                    className="w-full mt-2 p-2 border rounded-md text-sm"
-                                                                ></textarea>
+                                                                <div className="mt-3 pt-3 border-t space-y-4">
+                                                                     <div>
+                                                                        <h5 className="text-sm font-semibold text-gray-700 mb-2">Evaluación Simple de Conducta en Clase</h5>
+                                                                        <div className="space-y-2">
+                                                                            {PRE_SERVICE_BEHAVIOR_ITEMS.map(item => (
+                                                                                <div key={item.id} className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                                                                                    <p className="text-sm text-gray-600">{item.text}</p>
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        {BEHAVIOR_SCORE_LEVELS.map(level => (
+                                                                                            <button
+                                                                                                key={level.value}
+                                                                                                onClick={() => handlePreServiceBehaviorChange(student.nre, item.id, level.value)}
+                                                                                                className={`flex-1 text-xs font-semibold px-2 py-1 rounded-md transition-all ${preServiceIndEval?.behaviorScores?.[item.id] === level.value ? `${level.color} ring-2 ${level.ringColor}` : 'bg-gray-200 hover:bg-gray-300'}`}
+                                                                                            >
+                                                                                                {level.label}
+                                                                                            </button>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                    
+                                                                    <div>
+                                                                        <label className="block text-sm font-medium text-gray-700 mt-2">Observaciones adicionales</label>
+                                                                        <textarea
+                                                                            value={preServiceIndEval?.observation || ''}
+                                                                            onChange={e => handlePreServiceIndividualObservationChange(student.nre, e.target.value)}
+                                                                            placeholder="Anotaciones individuales sobre el alumno..."
+                                                                            rows={2}
+                                                                            className="w-full mt-1 p-2 border rounded-md text-sm"
+                                                                        ></textarea>
+                                                                    </div>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     );

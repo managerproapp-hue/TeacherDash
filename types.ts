@@ -114,11 +114,18 @@ export interface PreServiceGroupEvaluation {
   observation: string;
 }
 
+export type BehaviorScore = 3 | 2 | 1; // 3: Muy Bien, 2: A Veces, 1: Casi Nunca
+
+export type BehaviorEvaluation = {
+  [itemId: string]: BehaviorScore;
+};
+
 export interface PreServiceIndividualEvaluation {
   serviceId: string;
   studentNre: string;
   attendance: 'present' | 'absent';
   observation?: string;
+  behaviorScores?: BehaviorEvaluation;
 }
 
 export interface EvaluationsState {

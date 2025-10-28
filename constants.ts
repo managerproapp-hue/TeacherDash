@@ -115,6 +115,20 @@ export const SCORE_LEVELS = [
     { label: 'Insuficiente', value: 2, color: 'bg-red-500', textColor: 'text-white' }
 ];
 
+export const BEHAVIOR_SCORE_LEVELS = [
+  { label: 'Lo hace Muy Bien', value: 3 as const, color: 'bg-green-100 text-green-800', ringColor: 'ring-green-500' },
+  { label: 'Lo hace a Veces', value: 2 as const, color: 'bg-yellow-100 text-yellow-800', ringColor: 'ring-yellow-500' },
+  { label: 'Casi Nunca lo hace', value: 1 as const, color: 'bg-red-100 text-red-800', ringColor: 'ring-red-500' },
+];
+
+export const PRE_SERVICE_BEHAVIOR_ITEMS = [
+  { id: 'b1', text: 'Respeta las normas y no interrumpe.' },
+  { id: 'b2', text: 'Es amable y trata bien a los compañeros.' },
+  { id: 'b3', text: 'Trae limpio el uniforme.' },
+  { id: 'b4', text: 'Se muestra participativo e interesado.' },
+  { id: 'b5', text: 'Trae el material de trabajo (Fichas técnicas, etc.).' },
+];
+
 export const PRACTICAL_EXAM_RUBRIC_T1 = [
     { 
         id: 'ra1', 
