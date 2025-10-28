@@ -67,6 +67,7 @@ const DistribucionGruposView: React.FC<{
     const handleUnassignStudent = (studentNre: string) => {
         setStudentAssignments(prev => {
             const newAssignments = { ...prev };
+            // FIX: Corrected variable name from `nre` to `studentNre` to match the function's parameter.
             delete newAssignments[studentNre];
             return newAssignments;
         });
@@ -309,7 +310,7 @@ const ServiciosView: React.FC<{
 };
 
 const ServiceModal: React.FC<{ service: Service | null, allGroups: string[], onSave: (service: Service) => void, onClose: () => void }> = ({ service, allGroups, onSave, onClose }) => {
-    const [formData, setFormData] = useState<Omit<Service, 'id'>>({
+    const [formData, setFormData] = useState<Omit<Service, 'id' | 'elaboraciones'> & { elaboraciones: { comedor: Elaboracion[], takeaway: Elaboracion[] } }>({
         name: service?.name || '',
         date: service?.date ? service.date.split('T')[0] : new Date().toISOString().split('T')[0],
         trimestre: service?.trimestre || 1,
@@ -379,12 +380,16 @@ const ServiceModal: React.FC<{ service: Service | null, allGroups: string[], onS
           <form onSubmit={handleSubmit} className="flex flex-col flex-1">
             <div className="p-6 flex-1 overflow-y-auto">
                 <h2 className="text-2xl font-bold mb-4">{service ? 'Editar' : 'Nuevo'} Servicio</h2>
-                <input type="text" placeholder="Nombre (ej. Servicio Comida 1)" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required className="w-full p-2 border rounded mb-2" />
-                <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required className="w-full p-2 border rounded mb-2" />
+                <input type="text" placeholder="Nombre (ej. Servicio T1 #1 Comienzo curso)" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required className="w-full p-2 border rounded mb-2" />
+                <div className="relative">
+                  <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} required className="w-full p-2 border rounded mb-2 pr-10" />
+                  <CalendarIcon className="absolute right-2 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" style={{top: '1rem'}}/>
+                </div>
                  <select value={formData.trimestre} onChange={e => setFormData({...formData, trimestre: parseInt(e.target.value)})} className="w-full p-2 border rounded bg-white mb-4">
                     <option value={1}>1º Trimestre</option>
                     <option value={2}>2º Trimestre</option>
                 </select>
+                
                 <div className="space-y-4">
                     <div>
                         <h4 className="font-semibold mb-1">Asignar Grupos a Comedor:</h4>
@@ -441,8 +446,8 @@ const ServiceModal: React.FC<{ service: Service | null, allGroups: string[], onS
                 </div>
             </div>
             <div className="bg-gray-100 px-6 py-3 flex justify-end gap-4">
-              <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-300 rounded">Cancelar</button>
-              <button type="submit" className="px-4 py-2 bg-teal-500 text-white rounded">Guardar</button>
+              <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">Cancelar</button>
+              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Guardar</button>
             </div>
           </form>
         </div>
@@ -483,19 +488,39 @@ const PlanningGrid: React.FC<{
                 <thead className="bg-gray-50 sticky top-0 z-20">
                     <tr>
                         <th className="sticky left-0 bg-gray-50 px-3 py-3 text-left font-semibold text-gray-600 z-30 border-b border-r">Alumno</th>
-                        {services.map(service => (
-                            <th key={service.id} className="px-3 py-3 text-center font-semibold text-gray-600 whitespace-nowrap border-b border-r">
-                                {service.finalized && <LockClosedIcon className="h-4 w-4 inline-block mr-1 text-gray-400" />}
-                                {service.name} <br />
-                                <span className="font-normal text-xs">{new Date(service.date).toLocaleDateString()}</span>
-                                {groupBy === 'group' && (
-                                     <div className="mt-1 flex flex-col items-center gap-1 text-xs">
-                                        <div className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-medium">C: {service.groupAssignments.comedor.join(', ')}</div>
-                                        <div className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">T: {service.groupAssignments.takeaway.join(', ')}</div>
-                                    </div>
-                                )}
-                            </th>
-                        ))}
+                        {services.map(service => {
+                             const getGroupWithDishesText = (groupType: 'comedor' | 'takeaway'): string => {
+                                const groups = service.groupAssignments[groupType];
+                                if (!groups || groups.length === 0) return 'N/A';
+                                return groups.map(groupName => {
+                                    const dishes = (service.elaboraciones?.[groupType] || [])
+                                        .filter(e => e.assignedGroupId === groupName)
+                                        .map(e => e.name);
+                                    if (dishes.length > 0) {
+                                        return `${groupName} (${dishes.join(', ')})`;
+                                    }
+                                    return groupName;
+                                }).join('; ');
+                            };
+
+                            return (
+                                <th key={service.id} className="px-3 py-3 text-center font-semibold text-gray-600 whitespace-nowrap border-b border-r">
+                                    {service.finalized && <LockClosedIcon className="h-4 w-4 inline-block mr-1 text-gray-400" />}
+                                    {service.name} <br />
+                                    <span className="font-normal text-xs">{new Date(service.date).toLocaleDateString()}</span>
+                                    {groupBy === 'group' && (
+                                         <div className="mt-1 flex flex-col items-center gap-1 text-xs">
+                                            <div className="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-medium w-full max-w-[200px] truncate" title={`Comedor: ${getGroupWithDishesText('comedor')}`}>
+                                                C: {getGroupWithDishesText('comedor')}
+                                            </div>
+                                            <div className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium w-full max-w-[200px] truncate" title={`Takeaway: ${getGroupWithDishesText('takeaway')}`}>
+                                                T: {getGroupWithDishesText('takeaway')}
+                                            </div>
+                                        </div>
+                                    )}
+                                </th>
+                            );
+                        })}
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">

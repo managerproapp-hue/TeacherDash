@@ -70,7 +70,7 @@ export interface Service {
     comedor: string[];
     takeaway: string[];
   };
-  elaboraciones?: {
+  elaboraciones: {
     comedor: Elaboracion[];
     takeaway: Elaboracion[];
   };
@@ -108,9 +108,24 @@ export interface IndividualEvaluation {
   observation?: string;
 }
 
+export interface PreServiceGroupEvaluation {
+  serviceId: string;
+  groupId: string;
+  observation: string;
+}
+
+export interface PreServiceIndividualEvaluation {
+  serviceId: string;
+  studentNre: string;
+  attendance: 'present' | 'absent';
+  observation?: string;
+}
+
 export interface EvaluationsState {
   group: GroupEvaluation[];
   individual: IndividualEvaluation[];
+  preServiceGroup: PreServiceGroupEvaluation[];
+  preServiceIndividual: PreServiceIndividualEvaluation[];
 }
 
 // --- EXÁMENES PRÁCTICOS TYPES ---

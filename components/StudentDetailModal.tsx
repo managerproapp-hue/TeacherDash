@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student, EvaluationsState, Service, StudentGroupAssignments, EvaluationItemScore, StudentPracticalExam, TheoreticalExamGrades, Interview, Annotation, CourseGrades, CourseModuleGrades } from '../types';
 import { CloseIcon, PencilIcon, PlusIcon } from './icons';
@@ -71,6 +72,88 @@ interface StudentDetailModalProps {
     onEdit: (student: Student) => void;
     onUpdateStudent: (student: Student) => void;
 }
+
+const PracticalHistoryTab: React.FC<{ student: Student; evaluations: EvaluationsState }> = ({ student, evaluations }) => {
+    const services = useMemo(() => 
+        safeJsonParse<Service[]>('practicaServices', []).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), 
+    []);
+    const studentGroupAssignments = useMemo(() => safeJsonParse<StudentGroupAssignments>('studentGroupAssignments', {}), []);
+
+    const studentEvaluations = useMemo(() => {
+        const history = services.map(service => {
+            const studentGroup = studentGroupAssignments[student.nre];
+            const isAssigned = service.groupAssignments.comedor.includes(studentGroup) || service.groupAssignments.takeaway.includes(studentGroup);
+            
+            if (!isAssigned) return null;
+
+            const preServiceEval = evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+            const serviceEval = evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+            
+            // Only show services where there is some evaluation data or they were assigned.
+            if (!preServiceEval && !serviceEval) return null;
+
+            return { service, preServiceEval, serviceEval };
+        }).filter(Boolean);
+        
+        return history;
+    }, [services, evaluations, student.nre, studentGroupAssignments]);
+
+    if (studentEvaluations.length === 0) {
+        return <p className="text-center text-gray-500 italic mt-4">No hay historial de prácticas para este alumno.</p>;
+    }
+
+    return (
+        <div className="space-y-4">
+            {studentEvaluations.map(({ service, preServiceEval, serviceEval }) => (
+                <details key={service.id} className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                    <summary className="font-bold text-gray-800 cursor-pointer">
+                        {service.name} - <span className="font-normal text-gray-600">{new Date(service.date).toLocaleDateString()}</span>
+                    </summary>
+                    <div className="mt-3 pt-3 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Pre-Service Column */}
+                        <div className="bg-gray-50 p-3 rounded-md">
+                            <h4 className="font-semibold text-orange-700">Día Previo al Servicio</h4>
+                            {preServiceEval ? (
+                                <div className="mt-2 text-sm space-y-2">
+                                    <p>
+                                        <span className="font-semibold">Asistencia: </span>
+                                        <span className={`font-bold ${preServiceEval.attendance === 'present' ? 'text-green-700' : 'text-red-700'}`}>
+                                            {preServiceEval.attendance === 'present' ? 'Presente' : 'Ausente'}
+                                        </span>
+                                    </p>
+                                    <div>
+                                        <p className="font-semibold">Observación:</p>
+                                        <p className="text-gray-700 whitespace-pre-wrap">{preServiceEval.observation || <i className="text-gray-400">Sin observación.</i>}</p>
+                                    </div>
+                                </div>
+                            ) : <p className="text-sm text-gray-500 italic mt-2">Sin registro.</p>}
+                        </div>
+                        {/* Service Day Column */}
+                        <div className="bg-gray-50 p-3 rounded-md">
+                             <h4 className="font-semibold text-teal-700">Día de Servicio</h4>
+                            {serviceEval ? (
+                                <div className="mt-2 text-sm space-y-2">
+                                    <p>
+                                        <span className="font-semibold">Asistencia: </span>
+                                        <span className={`font-bold ${serviceEval.attendance === 'present' ? 'text-green-700' : 'text-red-700'}`}>
+                                            {serviceEval.attendance === 'present' ? 'Presente' : 'Ausente'}
+                                        </span>
+                                    </p>
+                                    <div>
+                                        <p className="font-semibold">Observación:</p>
+                                        <p className="text-gray-700 whitespace-pre-wrap">{serviceEval.observation || <i className="text-gray-400">Sin observación.</i>}</p>
+                                    </div>
+                                    <p><span className="font-semibold">Puntuación Individual: </span> {calculateScore(serviceEval.scores).toFixed(2)}</p>
+                                </div>
+                            ) : <p className="text-sm text-gray-500 italic mt-2">Sin registro.</p>}
+                        </div>
+                    </div>
+                </details>
+            ))}
+        </div>
+    );
+};
+
 
 const AcademicSummary: React.FC<{
     student: Student;
@@ -363,6 +446,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ student,
 
     const tabs = [
         { id: 'general', label: 'Información General' },
+        { id: 'practico', label: 'Historial Práctico' },
         { id: 'academico', label: 'Resumen Académico' }
     ];
 
@@ -370,6 +454,8 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ student,
         switch(activeTab) {
             case 'general':
                 return <GeneralInfoTab student={student} courseGrades={courseGrades} onUpdateStudent={onUpdateStudent} />;
+            case 'practico':
+                return <PracticalHistoryTab student={student} evaluations={evaluations} />;
             case 'academico':
                  return <AcademicSummary student={student} evaluations={evaluations} practicalExams={practicalExams} academicGrades={academicGrades} />;
             default:

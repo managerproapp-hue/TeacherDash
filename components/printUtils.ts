@@ -221,13 +221,33 @@ export const downloadPlanningPdf = async (
                     role: assignmentsForService[m.nre] || 'Sin asignar'
                 })).filter(m => !leaderRoleNames.has(m.role));
 
-                if (memberAssignments.length > 0) {
-                     tables.push({
-                        head: [[{ content: groupName, colSpan: 2, styles: { fillColor: '#f5f5f5', textColor: '#424242' } }]],
-                        body: memberAssignments.sort((a,b) => a.name.localeCompare(b.name)).map(item => [item.name, item.role]),
-                        headStyles: { fontStyle: 'bold' },
-                        columnStyles: { 1: { halign: 'right' } }
+                const dishesForGroup = (service.elaboraciones?.[groupType] || [])
+                    .filter(e => e.assignedGroupId === groupName);
+
+                if (memberAssignments.length > 0 || dishesForGroup.length > 0) {
+                    const tableBody: any[] = [];
+                    
+                    if (dishesForGroup.length > 0) {
+                        const dishesText = dishesForGroup.map(d => `- ${d.name}`).join('\n');
+                        tableBody.push([{
+                            content: `Elaboraciones:\n${dishesText}`,
+                            colSpan: 2,
+                            styles: { fontStyle: 'italic', textColor: '#333333', fillColor: '#FAFAFA' }
+                        }]);
+                    }
+                    
+                    memberAssignments.sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+                        tableBody.push([item.name, item.role]);
                     });
+                    
+                    if (tableBody.length > 0) {
+                         tables.push({
+                            head: [[{ content: groupName, colSpan: 2, styles: { fillColor: '#f5f5f5', textColor: '#424242' } }]],
+                            body: tableBody,
+                            headStyles: { fontStyle: 'bold' },
+                            columnStyles: { 1: { halign: 'right' } }
+                        });
+                    }
                 }
             });
         }

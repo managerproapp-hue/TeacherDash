@@ -31,10 +31,16 @@ const App: React.FC = () => {
   const [evaluations, setEvaluations] = useState<EvaluationsState>(() => {
     try {
       const saved = localStorage.getItem('teacher-dashboard-evaluations');
-      return saved ? JSON.parse(saved) : { group: [], individual: [] };
+      const parsed = saved ? JSON.parse(saved) : {};
+      return { 
+        group: parsed.group || [], 
+        individual: parsed.individual || [],
+        preServiceGroup: parsed.preServiceGroup || [],
+        preServiceIndividual: parsed.preServiceIndividual || [],
+      };
     } catch (error) {
       console.error("Could not parse evaluations from localStorage", error);
-      return { group: [], individual: [] };
+      return { group: [], individual: [], preServiceGroup: [], preServiceIndividual: [] };
     }
   });
 
