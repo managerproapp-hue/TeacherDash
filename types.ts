@@ -84,6 +84,7 @@ export type PlanningAssignments = Record<string, Record<string, string>>; // { [
 export interface Role {
     name: string;
     type: 'leader' | 'secondary';
+    color?: string;
 }
 
 

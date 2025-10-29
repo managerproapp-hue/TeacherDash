@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Student, Service, PlanningAssignments, StudentGroupAssignments, Role, Elaboracion } from '../types';
 import { GroupIcon, CogIcon, ServiceIcon, CalendarIcon, TrashIcon, PlusIcon, ViewGridIcon, CheckIcon, LockClosedIcon, DownloadIcon } from './icons';
-import { downloadPlanningPdf } from './printUtils';
+import { downloadPlanningPdf, downloadPdfWithTables } from './printUtils';
+import { PdfTableConfig } from './printUtils';
 
 // --- HELPER FUNCTIONS ---
 const safeJsonParse = <T,>(key: string, defaultValue: T): T => {
@@ -13,6 +14,27 @@ const safeJsonParse = <T,>(key: string, defaultValue: T): T => {
         return defaultValue;
     }
 };
+
+const getRandomHexColor = () => {
+    // Generates a random pastel color for better readability
+    return "hsl(" + 360 * Math.random() + ',' +
+               (25 + 70 * Math.random()) + '%,' + 
+               (85 + 10 * Math.random()) + '%)';
+};
+
+const isColorDark = (hexColor: string) => {
+    if (!hexColor) return false;
+    let color = hexColor.startsWith('#') ? hexColor.substring(1) : hexColor;
+    if (color.length === 3) {
+      color = color.split('').map(char => char + char).join('');
+    }
+    const r = parseInt(color.substring(0, 2), 16);
+    const g = parseInt(color.substring(2, 4), 16);
+    const b = parseInt(color.substring(4, 6), 16);
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return luma < 128;
+};
+
 
 const uuidv4 = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
   const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -67,12 +89,42 @@ const DistribucionGruposView: React.FC<{
     const handleUnassignStudent = (studentNre: string) => {
         setStudentAssignments(prev => {
             const newAssignments = { ...prev };
-            // FIX: Corrected variable name from `nre` to `studentNre` to match the function's parameter.
             delete newAssignments[studentNre];
             return newAssignments;
         });
     };
     
+    const handleExportGroupsPdf = () => {
+        const tablesForPdf: PdfTableConfig[] = practicaGroups.map(groupName => {
+            const members = students.filter(s => studentAssignments[s.nre] === groupName);
+            const body = members.length > 0
+                ? members.map((member, index) => [
+                    index + 1,
+                    `${member.apellido1} ${member.apellido2}, ${member.nombre}`,
+                    member.nre
+                  ])
+                : [[{ content: 'Este grupo no tiene alumnos asignados.', colSpan: 3, styles: { halign: 'center', fontStyle: 'italic' } }]];
+
+            return {
+                head: [[{ content: groupName, colSpan: 3, styles: { fontStyle: 'bold', fillColor: '#e0e7ff' } }], ['#', 'Nombre Completo', 'NRE']],
+                body: body,
+                columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 30 } },
+            };
+        });
+        
+        if (practicaGroups.length === 0) {
+            alert("No hay grupos definidos para exportar.");
+            return;
+        }
+
+        downloadPdfWithTables(
+            'Distribución de Grupos y Alumnos',
+            'distribucion_grupos',
+            tablesForPdf,
+            { orientation: 'portrait' }
+        );
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -81,7 +133,7 @@ const DistribucionGruposView: React.FC<{
                     <button onClick={handleAddGroup} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center">
                         <PlusIcon className="h-5 w-5 mr-2" /> Añadir Grupo
                     </button>
-                    <button className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg flex items-center">
+                    <button onClick={handleExportGroupsPdf} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg flex items-center">
                        <DownloadIcon className="h-5 w-5 mr-2" /> Exportar
                     </button>
                 </div>
@@ -160,14 +212,17 @@ const ConfiguracionView: React.FC<{
     setLeaderRoles: React.Dispatch<React.SetStateAction<Role[]>>;
     secondaryRoles: Role[];
     setSecondaryRoles: React.Dispatch<React.SetStateAction<Role[]>>;
-    roleColors: { leader: string, secondary: string };
-    setRoleColors: React.Dispatch<React.SetStateAction<{ leader: string, secondary: string }>>;
-}> = ({ leaderRoles, setLeaderRoles, secondaryRoles, setSecondaryRoles, roleColors, setRoleColors }) => {
+}> = ({ leaderRoles, setLeaderRoles, secondaryRoles, setSecondaryRoles }) => {
     
+    const handleRoleChange = (name: string, type: 'leader' | 'secondary', newColor: string) => {
+        const setter = type === 'leader' ? setLeaderRoles : setSecondaryRoles;
+        setter(prev => prev.map(r => r.name === name ? { ...r, color: newColor } : r));
+    };
+
     const handleAddRole = (type: 'leader' | 'secondary') => {
         const name = prompt(`Nombre del nuevo rol ${type === 'leader' ? 'de líder' : 'secundario'}:`);
         if (name) {
-            const newRole = { name, type };
+            const newRole: Role = { name, type, color: getRandomHexColor() };
             if (type === 'leader') {
                 setLeaderRoles(prev => [...prev, newRole]);
             } else {
@@ -196,7 +251,15 @@ const ConfiguracionView: React.FC<{
                 <div className="space-y-2">
                     {leaderRoles.map(role => (
                         <div key={role.name} className="flex justify-between items-center bg-gray-100 p-2 rounded">
-                            <span>{role.name}</span>
+                             <div className="flex items-center gap-3">
+                                <input 
+                                    type="color" 
+                                    value={role.color || '#FFFFFF'}
+                                    onChange={e => handleRoleChange(role.name, 'leader', e.target.value)}
+                                    className="w-8 h-8 p-0 border-none rounded cursor-pointer"
+                                />
+                                <span>{role.name}</span>
+                            </div>
                             <button onClick={() => handleDeleteRole(role.name, 'leader')} className="text-red-500 hover:text-red-700"><TrashIcon className="h-4 w-4"/></button>
                         </div>
                     ))}
@@ -210,35 +273,44 @@ const ConfiguracionView: React.FC<{
                 <div className="space-y-2">
                      {secondaryRoles.map(role => (
                         <div key={role.name} className="flex justify-between items-center bg-gray-100 p-2 rounded">
-                            <span>{role.name}</span>
+                             <div className="flex items-center gap-3">
+                                <input 
+                                    type="color" 
+                                    value={role.color || '#FFFFFF'}
+                                    onChange={e => handleRoleChange(role.name, 'secondary', e.target.value)}
+                                    className="w-8 h-8 p-0 border-none rounded cursor-pointer"
+                                />
+                                <span>{role.name}</span>
+                            </div>
                             <button onClick={() => handleDeleteRole(role.name, 'secondary')} className="text-red-500 hover:text-red-700"><TrashIcon className="h-4 w-4"/></button>
                         </div>
                     ))}
                 </div>
             </div>
-            <div className="md:col-span-2 pt-4 border-t">
-                 <h3 className="font-bold text-lg mb-3">Colores para Planning</h3>
-                 <div className="flex gap-8 items-center">
-                    <div>
-                        <label htmlFor="leaderColor" className="font-semibold block mb-1">Color Roles de Líder</label>
-                        <input id="leaderColor" type="color" value={roleColors.leader} onChange={e => setRoleColors(prev => ({...prev, leader: e.target.value}))} className="w-24 h-10 p-1 border rounded" />
-                    </div>
-                     <div>
-                        <label htmlFor="secondaryColor" className="font-semibold block mb-1">Color Roles Secundarios</label>
-                        <input id="secondaryColor" type="color" value={roleColors.secondary} onChange={e => setRoleColors(prev => ({...prev, secondary: e.target.value}))} className="w-24 h-10 p-1 border rounded" />
-                    </div>
-                 </div>
-            </div>
         </div>
     );
 };
 
-// --- SUB-COMPONENT: Servicios ---
-const ServiciosView: React.FC<{
+interface ServiciosViewProps {
     services: Service[];
     setServices: React.Dispatch<React.SetStateAction<Service[]>>;
     practicaGroups: string[];
-}> = ({ services, setServices, practicaGroups }) => {
+    students: Student[];
+    planningAssignments: PlanningAssignments;
+    studentGroupAssignments: StudentGroupAssignments;
+    leaderRoles: Role[];
+}
+
+// --- SUB-COMPONENT: Servicios ---
+const ServiciosView: React.FC<ServiciosViewProps> = ({ 
+    services, 
+    setServices, 
+    practicaGroups, 
+    students, 
+    planningAssignments, 
+    studentGroupAssignments, 
+    leaderRoles 
+}) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingService, setEditingService] = useState<Service | null>(null);
 
@@ -304,12 +376,42 @@ const ServiciosView: React.FC<{
                     </div>
                 ))}
             </div>
-            {isModalOpen && <ServiceModal service={editingService} allGroups={practicaGroups} onSave={handleSaveService} onClose={() => setIsModalOpen(false)} />}
+            {isModalOpen && <ServiceModal 
+                                service={editingService} 
+                                allGroups={practicaGroups} 
+                                onSave={handleSaveService} 
+                                onClose={() => setIsModalOpen(false)}
+                                students={students}
+                                planningAssignments={planningAssignments}
+                                studentGroupAssignments={studentGroupAssignments}
+                                leaderRoles={leaderRoles}
+                            />}
         </div>
     );
 };
 
-const ServiceModal: React.FC<{ service: Service | null, allGroups: string[], onSave: (service: Service) => void, onClose: () => void }> = ({ service, allGroups, onSave, onClose }) => {
+interface ServiceModalProps {
+    service: Service | null;
+    allGroups: string[];
+    onSave: (service: Service) => void;
+    onClose: () => void;
+    students: Student[];
+    planningAssignments: PlanningAssignments;
+    studentGroupAssignments: StudentGroupAssignments;
+    leaderRoles: Role[];
+}
+
+
+const ServiceModal: React.FC<ServiceModalProps> = ({ 
+    service, 
+    allGroups, 
+    onSave, 
+    onClose, 
+    students,
+    planningAssignments,
+    studentGroupAssignments,
+    leaderRoles
+}) => {
     const [formData, setFormData] = useState<Omit<Service, 'id' | 'elaboraciones'> & { elaboraciones: { comedor: Elaboracion[], takeaway: Elaboracion[] } }>({
         name: service?.name || '',
         date: service?.date ? service.date.split('T')[0] : new Date().toISOString().split('T')[0],
@@ -372,6 +474,18 @@ const ServiceModal: React.FC<{ service: Service | null, allGroups: string[], onS
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onSave({ ...formData, id: service?.id || uuidv4() });
+    };
+
+    const handleDownload = () => {
+        if (service) {
+            downloadPlanningPdf(
+                service,
+                students,
+                planningAssignments,
+                studentGroupAssignments,
+                leaderRoles
+            );
+        }
     };
 
     return (
@@ -445,9 +559,23 @@ const ServiceModal: React.FC<{ service: Service | null, allGroups: string[], onS
                     </div>
                 </div>
             </div>
-            <div className="bg-gray-100 px-6 py-3 flex justify-end gap-4">
-              <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">Cancelar</button>
-              <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Guardar</button>
+            <div className="bg-gray-100 px-6 py-3 flex justify-between items-center">
+                <div>
+                    {service && (
+                        <button
+                            type="button"
+                            onClick={handleDownload}
+                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2 text-sm font-semibold"
+                        >
+                            <DownloadIcon className="h-5 w-5" />
+                            <span>Descargar Planning</span>
+                        </button>
+                    )}
+                </div>
+                <div className="flex gap-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">Cancelar</button>
+                    <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Guardar</button>
+                </div>
             </div>
           </form>
         </div>
@@ -466,8 +594,7 @@ const PlanningGrid: React.FC<{
     studentGroupAssignments?: StudentGroupAssignments;
     leaderRoles: Role[];
     secondaryRoles: Role[];
-    roleColors: { leader: string, secondary: string };
-}> = ({ students, services, assignments, onRoleChange, groupBy = 'none', studentGroupAssignments = {}, leaderRoles, secondaryRoles, roleColors }) => {
+}> = ({ students, services, assignments, onRoleChange, groupBy = 'none', studentGroupAssignments = {}, leaderRoles, secondaryRoles }) => {
     
     const studentsByGroup = useMemo(() => {
         if (groupBy !== 'group') return [['Todos', students]];
@@ -481,6 +608,8 @@ const PlanningGrid: React.FC<{
         
         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
     }, [students, groupBy, studentGroupAssignments]);
+
+    const allRoles = useMemo(() => [...leaderRoles, ...secondaryRoles], [leaderRoles, secondaryRoles]);
 
     return (
         <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-[75vh]">
@@ -538,9 +667,8 @@ const PlanningGrid: React.FC<{
                                     </td>
                                     {services.map(service => {
                                         const currentRole = assignments[service.id]?.[student.nre] || "Sin asignar";
-                                        const isLeader = leaderRoles.some(r => r.name === currentRole);
-                                        const isSecondary = secondaryRoles.some(r => r.name === currentRole);
-                                        const roleColor = isLeader ? roleColors.leader : (isSecondary ? roleColors.secondary : '');
+                                        const roleObject = allRoles.find(r => r.name === currentRole);
+                                        const roleColor = roleObject?.color || '';
 
                                         return (
                                             <td key={service.id} className="px-2 py-1 border-b border-r">
@@ -549,7 +677,10 @@ const PlanningGrid: React.FC<{
                                                     onChange={e => onRoleChange(service.id, student.nre, e.target.value)}
                                                     disabled={service.finalized}
                                                     className="w-full p-1.5 border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-500 disabled:bg-gray-100"
-                                                    style={{ backgroundColor: service.finalized ? '' : roleColor }}
+                                                    style={{ 
+                                                        backgroundColor: service.finalized ? '' : roleColor,
+                                                        color: roleColor && isColorDark(roleColor) ? 'white' : 'black'
+                                                    }}
                                                 >
                                                     <option value="Sin asignar">Sin asignar</option>
                                                     <optgroup label="Líderes del Servicio">
@@ -582,9 +713,8 @@ const GestionPracticaView: React.FC<{ students: Student[] }> = ({ students }) =>
     const [studentGroupAssignments, setStudentGroupAssignments] = useState<StudentGroupAssignments>(() => safeJsonParse('studentGroupAssignments', {}));
     const [services, setServices] = useState<Service[]>(() => safeJsonParse('practicaServices', []));
     const [planningAssignments, setPlanningAssignments] = useState<PlanningAssignments>(() => safeJsonParse('planningAssignments', {}));
-    const [leaderRoles, setLeaderRoles] = useState<Role[]>(() => safeJsonParse('practicaLeaderRoles', [{ name: "Jefe de Cocina", type: 'leader' }, { name: "2º Jefe de Cocina", type: 'leader' }, { name: "2º Jefe de Takeaway", type: 'leader' }]));
-    const [secondaryRoles, setSecondaryRoles] = useState<Role[]>(() => safeJsonParse('practicaSecondaryRoles', [{ name: "Jefe de Partida", type: 'secondary' }, { name: "Cocinero", type: 'secondary' }, { name: "Ayudante", type: 'secondary' }, { name: "Sin servicio 1", type: 'secondary' }, { name: "Sin servicio 2", type: 'secondary' }]));
-    const [roleColors, setRoleColors] = useState<{ leader: string, secondary: string }>(() => safeJsonParse('practicaRoleColors', { leader: '#e0f2f1', secondary: '#fffbeb' }));
+    const [leaderRoles, setLeaderRoles] = useState<Role[]>(() => safeJsonParse('practicaLeaderRoles', [{ name: "Jefe de Cocina", type: 'leader', color: '#FFADAD' }, { name: "2º Jefe de Cocina", type: 'leader', color: '#FFD6A5' }, { name: "2º Jefe de Takeaway", type: 'leader', color: '#FDFFB6' }]));
+    const [secondaryRoles, setSecondaryRoles] = useState<Role[]>(() => safeJsonParse('practicaSecondaryRoles', [{ name: "Jefe de Partida", type: 'secondary', color: '#CAFFBF' }, { name: "Cocinero", type: 'secondary', color: '#9BF6FF' }, { name: "Ayudante", type: 'secondary', color: '#A0C4FF' }, { name: "Sin servicio 1", type: 'secondary', color: '#BDB2FF' }, { name: "Sin servicio 2", type: 'secondary', color: '#FFC6FF' }]));
     
     const [selectedServiceForPdf, setSelectedServiceForPdf] = useState<string>('');
 
@@ -595,7 +725,6 @@ const GestionPracticaView: React.FC<{ students: Student[] }> = ({ students }) =>
     useEffect(() => { localStorage.setItem('planningAssignments', JSON.stringify(planningAssignments)); }, [planningAssignments]);
     useEffect(() => { localStorage.setItem('practicaLeaderRoles', JSON.stringify(leaderRoles)); }, [leaderRoles]);
     useEffect(() => { localStorage.setItem('practicaSecondaryRoles', JSON.stringify(secondaryRoles)); }, [secondaryRoles]);
-    useEffect(() => { localStorage.setItem('practicaRoleColors', JSON.stringify(roleColors)); }, [roleColors]);
     
     useEffect(() => {
         if (!selectedServiceForPdf && services.length > 0) {
@@ -652,12 +781,20 @@ const GestionPracticaView: React.FC<{ students: Student[] }> = ({ students }) =>
                 case 'grupos':
                     return <DistribucionGruposView students={sortedStudents} practicaGroups={practicaGroups} setPracticaGroups={setPracticaGroups} studentAssignments={studentGroupAssignments} setStudentAssignments={setStudentGroupAssignments} />;
                 case 'servicios':
-                    return <ServiciosView services={services} setServices={setServices} practicaGroups={practicaGroups} />;
+                    return <ServiciosView 
+                                services={services} 
+                                setServices={setServices} 
+                                practicaGroups={practicaGroups}
+                                students={sortedStudents}
+                                planningAssignments={planningAssignments}
+                                studentGroupAssignments={studentGroupAssignments}
+                                leaderRoles={leaderRoles}
+                            />;
                 case 'planning':
                 case 'vision':
-                     return <PlanningGrid students={sortedStudents} services={sortedServices} assignments={planningAssignments} onRoleChange={handleRoleChange} leaderRoles={leaderRoles} secondaryRoles={secondaryRoles} roleColors={roleColors} groupBy={activeSubView === 'vision' ? 'group' : 'none'} studentGroupAssignments={studentGroupAssignments} />;
+                     return <PlanningGrid students={sortedStudents} services={sortedServices} assignments={planningAssignments} onRoleChange={handleRoleChange} leaderRoles={leaderRoles} secondaryRoles={secondaryRoles} groupBy={activeSubView === 'vision' ? 'group' : 'none'} studentGroupAssignments={studentGroupAssignments} />;
                 case 'configuracion':
-                    return <ConfiguracionView leaderRoles={leaderRoles} setLeaderRoles={setLeaderRoles} secondaryRoles={secondaryRoles} setSecondaryRoles={setSecondaryRoles} roleColors={roleColors} setRoleColors={setRoleColors} />;
+                    return <ConfiguracionView leaderRoles={leaderRoles} setLeaderRoles={setLeaderRoles} secondaryRoles={secondaryRoles} setSecondaryRoles={setSecondaryRoles} />;
                 default:
                     return null;
             }

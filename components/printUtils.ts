@@ -29,7 +29,7 @@ interface PdfOptions {
   orientation?: 'portrait' | 'landscape';
 }
 
-interface PdfTableConfig {
+export interface PdfTableConfig {
     head?: any[][];
     body: any[][];
     options?: any;
@@ -93,7 +93,12 @@ export const downloadPdfWithTables = async (title: string, fileName: string, tab
     // --- Draw Tables ---
     let startY: number | undefined = headerHeight;
     
-    tables.forEach((tableConfig) => {
+    tables.forEach((tableConfig, index) => {
+        // For subsequent tables, add some space
+        if (index > 0) {
+            startY = doc.lastAutoTable.finalY + 8;
+        }
+
         doc.autoTable({
             head: tableConfig.head,
             body: tableConfig.body,
@@ -141,7 +146,6 @@ export const downloadPdfWithTables = async (title: string, fileName: string, tab
                 doc.text(new Date().toLocaleDateString(), doc.internal.pageSize.getWidth() - data.settings.margin.right, footerY, { align: 'right' });
             },
         });
-        startY = doc.lastAutoTable.finalY + 8; // Space between tables
     });
     
     doc.save(`${fileName}.pdf`);
@@ -178,7 +182,6 @@ export const downloadPlanningPdf = async (
     }
 
     const margin = { top: 35, right: 15, bottom: 20, left: 15 };
-    let finalY = margin.top;
 
     const leaderAssignments = Object.entries(assignmentsForService)
         .filter(([, role]) => leaderRoleNames.has(role))
@@ -270,7 +273,6 @@ export const downloadPlanningPdf = async (
         doc.text(`Comienzo curso (${new Date(service.date).toLocaleDateString()})`, doc.internal.pageSize.getWidth() / 2, 22, { align: 'center' });
         
         // Footer
-        const pageCount = doc.internal.getNumberOfPages();
         doc.setFontSize(8);
         const footerY = doc.internal.pageSize.getHeight() - 10;
         doc.text(`${instituteData.name} - ${teacherData.name}`, margin.left, footerY);

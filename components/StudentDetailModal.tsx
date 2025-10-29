@@ -1,9 +1,10 @@
 
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student, EvaluationsState, Service, StudentGroupAssignments, EvaluationItemScore, StudentPracticalExam, TheoreticalExamGrades, Interview, Annotation, CourseGrades, CourseModuleGrades } from '../types';
 import { CloseIcon, PencilIcon, PlusIcon } from './icons';
-import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS } from '../constants';
+import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS, INDIVIDUAL_EVALUATION_ITEMS } from '../constants';
 
 
 // Helper function to safely parse JSON from localStorage
@@ -162,11 +163,35 @@ const PracticalHistoryTab: React.FC<{ student: Student; evaluations: Evaluations
                                             {serviceEval.attendance === 'present' ? 'Presente' : 'Ausente'}
                                         </span>
                                     </p>
-                                    <div>
-                                        <p className="font-semibold">Observación:</p>
-                                        <p className="text-gray-700 whitespace-pre-wrap">{serviceEval.observation || <i className="text-gray-400">Sin observación.</i>}</p>
-                                    </div>
-                                    <p><span className="font-semibold">Puntuación Individual: </span> {calculateScore(serviceEval.scores).toFixed(2)}</p>
+                                    
+                                    {serviceEval.attendance === 'present' && (
+                                        <>
+                                            {serviceEval.scores && serviceEval.scores.length > 0 && (
+                                                <div className="pt-2 mt-2 border-t">
+                                                    <p className="font-semibold mb-1">Evaluación Detallada:</p>
+                                                    <ul className="space-y-1 text-xs">
+                                                        {INDIVIDUAL_EVALUATION_ITEMS.map(item => {
+                                                            const scoreEntry = serviceEval.scores.find(s => s.itemId === item.id);
+                                                            const score = scoreEntry ? scoreEntry.score : 0;
+                                                            return (
+                                                                <li key={item.id} className="flex justify-between items-center gap-2">
+                                                                    <span className="text-gray-600 flex-grow">{item.text}</span>
+                                                                    <span className="flex-shrink-0 px-2 py-0.5 font-semibold rounded-full bg-blue-100 text-blue-800">{score.toFixed(2)} / {item.points.toFixed(2)}</span>
+                                                                </li>
+                                                            )
+                                                        })}
+                                                    </ul>
+                                                </div>
+                                            )}
+
+                                            <div className="pt-2 mt-2 border-t">
+                                                <p className="font-semibold">Observación:</p>
+                                                <p className="text-gray-700 whitespace-pre-wrap">{serviceEval.observation || <i className="text-gray-400">Sin observación.</i>}</p>
+                                            </div>
+
+                                            <p className="font-semibold mt-2 border-t pt-2"><span >Puntuación Individual Total: </span> <span className="text-lg font-bold">{calculateScore(serviceEval.scores).toFixed(2)}</span> / 10.00</p>
+                                        </>
+                                    )}
                                 </div>
                             ) : <p className="text-sm text-gray-500 italic mt-2">Sin registro.</p>}
                         </div>
