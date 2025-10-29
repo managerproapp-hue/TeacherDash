@@ -105,6 +105,7 @@ export interface IndividualEvaluation {
   serviceId: string;
   studentNre: string;
   attendance: 'present' | 'absent';
+  broughtMaterials?: boolean;
   scores: EvaluationItemScore[];
   observation?: string;
 }

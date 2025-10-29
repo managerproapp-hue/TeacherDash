@@ -4,6 +4,7 @@
 
 
 
+
 import React, { useState, useMemo, useCallback } from 'react';
 import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, Annotation, PreServiceGroupEvaluation, PreServiceIndividualEvaluation, BehaviorScore } from '../types';
 import { GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS } from '../constants';
@@ -94,13 +95,31 @@ const EvaluationForm: React.FC<{
             const newEvals = { ...prev };
             const existingEvalIndex = newEvals.individual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
             if (existingEvalIndex > -1) {
-                newEvals.individual[existingEvalIndex] = { ...newEvals.individual[existingEvalIndex], attendance };
+                const updatedEval = { ...newEvals.individual[existingEvalIndex], attendance };
+                if (attendance === 'absent') {
+                    updatedEval.broughtMaterials = false;
+                }
+                newEvals.individual[existingEvalIndex] = updatedEval;
             } else {
-                newEvals.individual.push({ serviceId: service.id, studentNre, attendance, scores: [], observation: '' });
+                newEvals.individual.push({ serviceId: service.id, studentNre, attendance, scores: [], observation: '', broughtMaterials: attendance === 'present' });
             }
             return newEvals;
         });
     };
+
+    const handleIndividualBroughtMaterialsChange = (studentNre: string, broughtMaterials: boolean) => {
+        setEvaluations(prev => {
+            const newEvals = { ...prev };
+            const existingEvalIndex = newEvals.individual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
+            if (existingEvalIndex > -1) {
+                newEvals.individual[existingEvalIndex] = { ...newEvals.individual[existingEvalIndex], broughtMaterials };
+            } else {
+                newEvals.individual.push({ serviceId: service.id, studentNre, attendance: 'present', broughtMaterials, scores: [], observation: '' });
+            }
+            return newEvals;
+        });
+    };
+
 
     const handleIndividualScoreChange = (studentNre: string, itemId: string, score: number) => {
          setEvaluations(prev => {
@@ -112,7 +131,7 @@ const EvaluationForm: React.FC<{
                 targetEval = { ...newEvals.individual[existingEvalIndex] };
                 newEvals.individual[existingEvalIndex] = targetEval;
             } else {
-                targetEval = { serviceId: service.id, studentNre, attendance: 'present', scores: [], observation: '' };
+                targetEval = { serviceId: service.id, studentNre, attendance: 'present', scores: [], observation: '', broughtMaterials: true };
                 newEvals.individual.push(targetEval);
             }
             
@@ -133,7 +152,7 @@ const EvaluationForm: React.FC<{
             if (existingEvalIndex > -1) {
                 newEvals.individual[existingEvalIndex] = { ...newEvals.individual[existingEvalIndex], observation };
             } else {
-                newEvals.individual.push({ serviceId: service.id, studentNre, attendance: 'present', scores: [], observation });
+                newEvals.individual.push({ serviceId: service.id, studentNre, attendance: 'present', scores: [], observation, broughtMaterials: true });
             }
             return newEvals;
         });
@@ -311,6 +330,7 @@ const EvaluationForm: React.FC<{
                                                 {studentsInGroup.map((student, index) => {
                                                     const individualEval = evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
                                                     const isPresent = individualEval?.attendance !== 'absent';
+                                                    const broughtMaterials = individualEval?.broughtMaterials ?? true;
                                                     
                                                     return (
                                                         <details key={student.nre} className="bg-white p-3 rounded-md border">
@@ -321,6 +341,17 @@ const EvaluationForm: React.FC<{
                                                                         <input type="checkbox" checked={isPresent} onChange={e => handleIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1"/>
                                                                         {isPresent ? 'Presente' : 'Ausente'}
                                                                     </label>
+                                                                    {isPresent && (
+                                                                        <label className={`text-xs font-bold px-2 py-1 rounded-full cursor-pointer ${broughtMaterials ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                                            <input 
+                                                                                type="checkbox" 
+                                                                                checked={broughtMaterials} 
+                                                                                onChange={e => handleIndividualBroughtMaterialsChange(student.nre, e.target.checked)} 
+                                                                                className="mr-1"
+                                                                            />
+                                                                            {broughtMaterials ? 'Trae Fichas' : 'Sin Fichas'}
+                                                                        </label>
+                                                                    )}
                                                                 </div>
                                                             </summary>
                                                             {isPresent && (
