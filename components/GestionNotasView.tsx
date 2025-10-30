@@ -1,12 +1,6 @@
 
-
-
-
-
-
-
 import React, { useState, useMemo, useCallback } from 'react';
-import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, Annotation, PreServiceGroupEvaluation, PreServiceIndividualEvaluation, BehaviorScore } from '../types';
+import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, Annotation, PreServiceGroupEvaluation, PreServiceIndividualEvaluation, BehaviorScore, PlanningAssignments } from '../types';
 import { GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS } from '../constants';
 import { BackIcon, CheckIcon, DownloadIcon } from './icons';
 import { exportToExcel, downloadPdfWithTables } from './printUtils';
@@ -36,14 +30,17 @@ const calculateScore = (scores: EvaluationItemScore[]): number => {
 
 // --- SUB-COMPONENTS ---
 
-const EvaluationForm: React.FC<{
+interface EvaluationFormProps {
     service: Service;
     students: Student[];
     studentGroupAssignments: StudentGroupAssignments;
     evaluations: EvaluationsState;
     setEvaluations: React.Dispatch<React.SetStateAction<EvaluationsState>>;
     onBack: () => void;
-}> = ({ service, students, studentGroupAssignments, evaluations, setEvaluations, onBack }) => {
+    planningAssignments: PlanningAssignments;
+}
+
+const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, studentGroupAssignments, evaluations, setEvaluations, onBack, planningAssignments }) => {
 
     const [activeEvalTab, setActiveEvalTab] = useState<'service' | 'pre-service'>('service');
 
@@ -331,11 +328,18 @@ const EvaluationForm: React.FC<{
                                                     const individualEval = evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
                                                     const isPresent = individualEval?.attendance !== 'absent';
                                                     const broughtMaterials = individualEval?.broughtMaterials ?? true;
-                                                    
+                                                    const studentRole = planningAssignments[service.id]?.[student.nre];
+
                                                     return (
                                                         <details key={student.nre} className="bg-white p-3 rounded-md border">
                                                             <summary className="font-semibold text-md cursor-pointer flex justify-between items-center">
-                                                                <div className="flex items-center"><span className="text-sm text-gray-500 w-6">{index + 1}.</span><span>{student.apellido1} {student.apellido2}, {student.nombre}</span></div>
+                                                                <div className="flex items-center">
+                                                                    <span className="text-sm text-gray-500 w-6">{index + 1}.</span>
+                                                                    <span>{student.apellido1} {student.apellido2}, {student.nombre}</span>
+                                                                    {studentRole && (
+                                                                        <span className="ml-2 text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{studentRole}</span>
+                                                                    )}
+                                                                </div>
                                                                 <div className="flex items-center gap-2">
                                                                     <label className={`text-xs font-bold px-2 py-1 rounded-full ${isPresent ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                                                         <input type="checkbox" checked={isPresent} onChange={e => handleIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1"/>
@@ -408,11 +412,17 @@ const EvaluationForm: React.FC<{
                                                  {studentsInGroup.map((student, index) => {
                                                     const preServiceIndEval = evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
                                                     const isPresent = preServiceIndEval?.attendance !== 'absent';
-                                                    
+                                                    const studentRole = planningAssignments[service.id]?.[student.nre];
+
                                                     return (
                                                         <div key={student.nre} className="bg-white p-3 rounded-md border">
                                                             <div className="flex justify-between items-center">
-                                                                <p className="font-semibold">{index + 1}. {student.apellido1} {student.apellido2}, {student.nombre}</p>
+                                                                <div className="font-semibold flex items-center">
+                                                                    <span>{index + 1}. {student.apellido1} {student.apellido2}, {student.nombre}</span>
+                                                                    {studentRole && (
+                                                                        <span className="ml-2 text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{studentRole}</span>
+                                                                    )}
+                                                                </div>
                                                                 <label className={`text-xs font-bold px-2 py-1 rounded-full ${isPresent ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                                                     <input type="checkbox" checked={isPresent} onChange={e => handlePreServiceIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1"/>
                                                                     {isPresent ? 'Presente' : 'Ausente'}
@@ -563,6 +573,7 @@ const GestionNotasView: React.FC<GestionNotasViewProps> = ({ students, setStuden
 
     const services = useMemo(() => safeJsonParse<Service[]>('practicaServices', []).sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()), []);
     const studentGroupAssignments = useMemo(() => safeJsonParse<StudentGroupAssignments>('studentGroupAssignments', {}), []);
+    const planningAssignments = useMemo(() => safeJsonParse<PlanningAssignments>('planningAssignments', {}), []);
 
     const studentsByGroup = useMemo(() => {
         const grouped: { [key: string]: Student[] } = {};
@@ -738,6 +749,7 @@ const GestionNotasView: React.FC<GestionNotasViewProps> = ({ students, setStuden
                     evaluations={evaluations}
                     setEvaluations={setEvaluations}
                     onBack={handleBackToSummary}
+                    planningAssignments={planningAssignments}
                 />
             )}
         </div>
