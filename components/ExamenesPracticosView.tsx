@@ -220,7 +220,7 @@ const ExamenesPracticosView: React.FC<ExamenesPracticosViewProps> = ({ students,
             <div className="flex flex-col md:flex-row gap-8">
                 {/* Student List */}
                 <aside className={`flex-shrink-0 transition-all duration-300 ease-in-out ${isStudentListCollapsed ? 'w-full md:w-20' : 'w-full md:w-1/3 lg:w-1/4'}`}>
-                    <div className={`bg-white rounded-lg shadow-md h-full flex flex-col ${isStudentListCollapsed ? 'p-2' : 'p-4'}`}>
+                    <div className="bg-white rounded-lg shadow-md h-full flex flex-col p-4">
                         {!isStudentListCollapsed && (
                             <>
                                 <h2 className="text-lg font-bold text-gray-800 mb-3">Lista de Alumnos</h2>
@@ -239,9 +239,9 @@ const ExamenesPracticosView: React.FC<ExamenesPracticosViewProps> = ({ students,
                                     key={student.nre}
                                     onClick={() => setSelectedStudentNre(student.nre)}
                                     title={isStudentListCollapsed ? `${student.apellido1} ${student.apellido2}, ${student.nombre}` : undefined}
-                                    className={`w-full flex items-center text-left p-2 rounded-lg mb-1 transition-colors relative ${
+                                    className={`w-full flex items-center text-left rounded-lg mb-1 transition-colors relative ${
                                         selectedStudentNre === student.nre ? 'bg-teal-100' : 'hover:bg-gray-100'
-                                    } ${isStudentListCollapsed ? 'justify-center' : ''}`}
+                                    } ${isStudentListCollapsed ? 'p-1.5 justify-center' : 'p-2'}`}
                                 >
                                     <img
                                         className="h-10 w-10 rounded-full object-cover flex-shrink-0"

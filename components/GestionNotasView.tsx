@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo, useCallback } from 'react';
-import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, Annotation, PreServiceGroupEvaluation, PreServiceIndividualEvaluation, BehaviorScore, PlanningAssignments } from '../types';
+import { Student, EvaluationsState, Service, StudentGroupAssignments, GroupEvaluation, IndividualEvaluation, EvaluationItemScore, PreServiceGroupEvaluation, PreServiceIndividualEvaluation, BehaviorScore, PlanningAssignments } from '../types';
 import { GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS, PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_SCORE_LEVELS } from '../constants';
-import { BackIcon, CheckIcon, DownloadIcon } from './icons';
+import { BackIcon, CloseIcon, DownloadIcon } from './icons';
 import { exportToExcel, downloadPdfWithTables } from './printUtils';
 
 interface GestionNotasViewProps {
@@ -25,10 +24,50 @@ const safeJsonParse = <T,>(key: string, defaultValue: T): T => {
 
 const calculateScore = (scores: EvaluationItemScore[]): number => {
   if (!scores) return 0;
-  return scores.reduce((sum, item) => sum + item.score, 0);
+  return scores.reduce((sum, item) => sum + (item.score || 0), 0);
 };
 
 // --- SUB-COMPONENTS ---
+
+const ObservationModal: React.FC<{
+    student: Student;
+    initialObservation: string;
+    onClose: () => void;
+    onSave: (studentNre: string, observation: string) => void;
+}> = ({ student, initialObservation, onClose, onSave }) => {
+    const [observation, setObservation] = useState(initialObservation);
+    
+    const handleSave = () => {
+        onSave(student.nre, observation);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg transform transition-all flex flex-col">
+                <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                    <h3 className="text-lg font-bold text-gray-800">Observación para {student.nombre} {student.apellido1}</h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                        <CloseIcon className="h-6 w-6"/>
+                    </button>
+                </div>
+                <div className="p-4">
+                    <textarea 
+                        value={observation}
+                        onChange={e => setObservation(e.target.value)}
+                        rows={8}
+                        className="w-full p-2 border rounded-md focus:ring-teal-500 focus:border-teal-500"
+                        placeholder="Escribe tus anotaciones aquí..."
+                        autoFocus
+                    />
+                </div>
+                <div className="p-4 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
+                    <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
+                    <button onClick={handleSave} className="px-4 py-2 bg-teal-500 text-white font-bold rounded-md hover:bg-teal-600">Guardar</button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 interface EvaluationFormProps {
     service: Service;
@@ -43,6 +82,9 @@ interface EvaluationFormProps {
 const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, studentGroupAssignments, evaluations, setEvaluations, onBack, planningAssignments }) => {
 
     const [activeEvalTab, setActiveEvalTab] = useState<'service' | 'pre-service'>('service');
+    const [observationModal, setObservationModal] = useState<{isOpen: boolean; student: Student | null}>({isOpen: false, student: null});
+    const [preServiceObservationModal, setPreServiceObservationModal] = useState<{isOpen: boolean; student: Student | null}>({isOpen: false, student: null});
+
 
     const assignedGroups = useMemo(() => {
         return [...new Set([...service.groupAssignments.comedor, ...service.groupAssignments.takeaway])]
@@ -103,21 +145,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
             return newEvals;
         });
     };
-
-    const handleIndividualBroughtMaterialsChange = (studentNre: string, broughtMaterials: boolean) => {
-        setEvaluations(prev => {
-            const newEvals = { ...prev };
-            const existingEvalIndex = newEvals.individual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
-            if (existingEvalIndex > -1) {
-                newEvals.individual[existingEvalIndex] = { ...newEvals.individual[existingEvalIndex], broughtMaterials };
-            } else {
-                newEvals.individual.push({ serviceId: service.id, studentNre, attendance: 'present', broughtMaterials, scores: [], observation: '' });
-            }
-            return newEvals;
-        });
-    };
-
-
+    
     const handleIndividualScoreChange = (studentNre: string, itemId: string, score: number) => {
          setEvaluations(prev => {
             const newEvals = { ...prev };
@@ -141,8 +169,8 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
             return newEvals;
         });
     };
-
-    const handleIndividualObservationChange = (studentNre: string, observation: string) => {
+    
+    const handleSaveObservation = (studentNre: string, observation: string) => {
         setEvaluations(prev => {
             const newEvals = { ...prev };
             const existingEvalIndex = newEvals.individual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
@@ -153,7 +181,9 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
             }
             return newEvals;
         });
+        setObservationModal({ isOpen: false, student: null });
     };
+
 
     // --- PRE-SERVICE DAY HANDLERS ---
     const handlePreServiceGroupObservationChange = (groupId: string, observation: string) => {
@@ -203,6 +233,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
             if (targetEval.attendance === 'present') {
                 const currentScores = targetEval.behaviorScores ? { ...targetEval.behaviorScores } : {};
                 
+                // Toggle functionality: if same score is clicked, deselect it.
                 if (currentScores[itemId] === score) {
                     delete currentScores[itemId];
                 } else {
@@ -216,7 +247,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
         });
     };
 
-    const handlePreServiceIndividualObservationChange = (studentNre: string, observation: string) => {
+    const handleSavePreServiceObservation = (studentNre: string, observation: string) => {
         setEvaluations(prev => {
             const newEvals = { ...prev };
             const index = newEvals.preServiceIndividual.findIndex(e => e.serviceId === service.id && e.studentNre === studentNre);
@@ -227,7 +258,14 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
             }
             return newEvals;
         });
+        setPreServiceObservationModal({isOpen: false, student: null});
     };
+
+    const behaviorScoreLevels: { label: string, value: BehaviorScore, className: string, selectedClassName: string }[] = [
+        { label: '++', value: 3, className: 'bg-green-500 hover:bg-green-600 text-white', selectedClassName: 'ring-2 ring-offset-1 ring-green-500' },
+        { label: '+', value: 2, className: 'bg-green-200 hover:bg-green-300 text-green-800', selectedClassName: 'ring-2 ring-offset-1 ring-green-400' },
+        { label: '-', value: 1, className: 'bg-red-500 hover:bg-red-600 text-white', selectedClassName: 'ring-2 ring-offset-1 ring-red-500' }
+    ];
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-md">
@@ -256,227 +294,304 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ service, students, stud
                     >Día de Servicio</button>
                 </nav>
             </div>
-
-            <div className="space-y-8">
-                {assignedGroups.map(groupId => {
-                    const studentsInGroup = students
-                        .filter(s => studentGroupAssignments[s.nre] === groupId)
-                        .sort((a, b) => `${a.apellido1} ${a.apellido2} ${a.nombre}`.localeCompare(`${b.apellido1} ${b.apellido2} ${b.nombre}`));
-                    const groupEval = evaluations.group.find(e => e.serviceId === service.id && e.groupId === groupId);
-                    const preServiceGroupEval = evaluations.preServiceGroup.find(e => e.serviceId === service.id && e.groupId === groupId);
-
-                    const elaboracionesAsignadas = [
-                        ...(service.elaboraciones?.comedor?.filter(e => e.assignedGroupId === groupId) || []),
-                        ...(service.elaboraciones?.takeaway?.filter(e => e.assignedGroupId === groupId) || [])
-                    ];
-
-                    return (
-                        <details key={groupId} open className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <summary className="font-bold text-xl text-gray-700 cursor-pointer">
-                                {groupId} ({studentsInGroup.length} alumnos)
-                            </summary>
-                            <div className="mt-4 pt-4 border-t">
-                                {elaboracionesAsignadas.length > 0 && (
-                                    <div className="mb-6 bg-blue-50 p-3 rounded-md border border-blue-200">
-                                        <h4 className="font-semibold text-md text-blue-800 mb-1">Elaboraciones Asignadas a este Grupo:</h4>
-                                        <ul className="list-disc list-inside text-sm text-blue-900">
-                                            {elaboracionesAsignadas.map(e => <li key={e.id}>{e.name}</li>)}
-                                        </ul>
-                                    </div>
-                                )}
-                                
-                                {activeEvalTab === 'service' && (
-                                    <>
-                                        {/* Group Evaluation */}
-                                        <div className="mb-6">
-                                            <h4 className="font-semibold text-lg text-blue-800 mb-3">Evaluación Grupal (Día de Servicio)</h4>
-                                            
-                                            <div className="space-y-3">
-                                                {GROUP_EVALUATION_ITEMS.map(item => {
-                                                    const currentScore = groupEval?.scores.find(s => s.itemId === item.id)?.score ?? '';
-                                                    return (
-                                                        <div key={item.id} className="grid grid-cols-4 items-center gap-4 text-sm">
-                                                            <label className="col-span-3 text-gray-700">{item.text}</label>
-                                                            <input
-                                                                type="number"
-                                                                value={currentScore}
-                                                                onChange={e => handleGroupScoreChange(groupId, item.id, parseFloat(e.target.value))}
-                                                                min="0"
-                                                                max={item.points}
-                                                                step="0.01"
-                                                                placeholder={`Max: ${item.points}`}
-                                                                className="p-2 border rounded-md w-24 text-center"
-                                                            />
-                                                        </div>
-                                                    );
-                                                })}
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mt-4">Observación Grupal</label>
-                                                    <textarea 
-                                                        value={groupEval?.observation || ''}
-                                                        onChange={e => handleGroupObservationChange(groupId, e.target.value)}
-                                                        rows={3} className="w-full mt-1 p-2 border rounded-md"></textarea>
-                                                </div>
-                                            </div>
+            
+            {activeEvalTab === 'service' && (
+                <div className="space-y-12">
+                    {/* NEW: Group Evaluation Grid */}
+                    <div className="mb-8">
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">Evaluación Grupal (Día de Servicio)</h3>
+                        <div className="overflow-x-auto border border-gray-200 rounded-lg bg-white">
+                            <div className="grid" style={{ gridTemplateColumns: `minmax(300px, 2fr) repeat(${assignedGroups.length}, minmax(180px, 1fr))` }}>
+                                {/* Header Row */}
+                                <div className="p-3 font-semibold bg-gray-100 border-b border-r text-sm sticky left-0 z-10">Criterio de Evaluación</div>
+                                {assignedGroups.map(groupId => {
+                                    const isComedor = service.groupAssignments.comedor.includes(groupId);
+                                    const isTakeaway = service.groupAssignments.takeaway.includes(groupId);
+                                    const bgColor = isComedor ? 'bg-green-50' : isTakeaway ? 'bg-blue-50' : 'bg-gray-100';
+                                    const borderColor = isComedor ? 'border-green-200' : isTakeaway ? 'border-blue-200' : 'border-gray-200';
+                                    const textColor = isComedor ? 'text-green-800' : isTakeaway ? 'text-blue-800' : 'text-gray-800';
+                                    const elaboraciones = [
+                                        ...(service.elaboraciones?.comedor?.filter(e => e.assignedGroupId === groupId) || []),
+                                        ...(service.elaboraciones?.takeaway?.filter(e => e.assignedGroupId === groupId) || [])
+                                    ];
+                                    return (
+                                        <div key={groupId} className={`p-3 font-semibold text-center border-b border-r ${bgColor} ${borderColor}`}>
+                                            <p className={`font-bold text-lg ${textColor}`}>{groupId}</p>
+                                            <p className="text-xs font-semibold text-gray-600 mt-1">
+                                                {isComedor && 'COMEDOR'}
+                                                {isComedor && isTakeaway && ' & '}
+                                                {isTakeaway && 'TAKEAWAY'}
+                                            </p>
+                                            {elaboraciones.length > 0 && (
+                                                <ul className="text-xs font-normal text-gray-700 mt-2 list-disc list-inside text-left mx-auto max-w-max">
+                                                    {elaboraciones.map(e => <li key={e.id}>{e.name}</li>)}
+                                                </ul>
+                                            )}
                                         </div>
+                                    );
+                                })}
 
-                                        {/* Individual Evaluations */}
-                                        <div>
-                                            <h4 className="font-semibold text-lg text-green-800 mb-3">Evaluaciones Individuales (Día de Servicio)</h4>
-                                            <div className="space-y-4">
-                                                {studentsInGroup.map((student, index) => {
+                                {/* Rubric Rows */}
+                                {GROUP_EVALUATION_ITEMS.map(item => (
+                                    <React.Fragment key={item.id}>
+                                        <div className="p-3 border-b border-r text-sm flex items-center bg-gray-50 sticky left-0 z-10">{item.text}</div>
+                                        {assignedGroups.map(groupId => {
+                                            const groupEval = evaluations.group.find(e => e.serviceId === service.id && e.groupId === groupId);
+                                            const currentScore = groupEval?.scores.find(s => s.itemId === item.id)?.score ?? '';
+                                            return (
+                                                <div key={groupId} className="p-3 border-b border-r flex items-center justify-center">
+                                                    <input
+                                                        type="number"
+                                                        value={currentScore}
+                                                        onChange={e => handleGroupScoreChange(groupId, item.id, parseFloat(e.target.value))}
+                                                        min="0" max={item.points} step="0.01"
+                                                        placeholder={`${item.points} pts`}
+                                                        className="p-2 border rounded-md w-24 text-center focus:ring-teal-500 focus:border-teal-500"
+                                                    />
+                                                </div>
+                                            )
+                                        })}
+                                    </React.Fragment>
+                                ))}
+
+                                {/* Observation Row */}
+                                <div className="p-3 border-r font-semibold text-sm bg-gray-50 sticky left-0 z-10">Observación Grupal</div>
+                                {assignedGroups.map(groupId => {
+                                    const groupEval = evaluations.group.find(e => e.serviceId === service.id && e.groupId === groupId);
+                                    return (
+                                        <div key={groupId} className="p-2 border-r">
+                                            <textarea 
+                                                value={groupEval?.observation || ''}
+                                                onChange={e => handleGroupObservationChange(groupId, e.target.value)}
+                                                rows={4} className="w-full text-sm mt-1 p-2 border rounded-md focus:ring-teal-500 focus:border-teal-500"></textarea>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* NEW: Individual Evaluation Grids */}
+                     <div>
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">Evaluaciones Individuales (Día de Servicio)</h3>
+                        <div className="space-y-8">
+                        {assignedGroups.map(groupId => {
+                            const studentsInGroup = students
+                                .filter(s => studentGroupAssignments[s.nre] === groupId)
+                                .sort((a, b) => `${a.apellido1} ${a.apellido2} ${a.nombre}`.localeCompare(`${b.apellido1} ${b.apellido2} ${b.nombre}`));
+                            
+                            if (studentsInGroup.length === 0) return null;
+
+                            return (
+                            <div key={groupId}>
+                                <h4 className="font-semibold text-lg text-gray-700 mb-3 bg-gray-100 p-2 rounded-md">{groupId}</h4>
+                                <div className="overflow-x-auto border border-gray-200 rounded-lg bg-white">
+                                    <div className="grid" style={{ gridTemplateColumns: `minmax(300px, 2fr) repeat(${studentsInGroup.length}, minmax(150px, 1fr))` }}>
+                                        {/* Header Row */}
+                                        <div className="p-3 font-semibold bg-gray-100 border-b border-r text-sm sticky left-0 z-10">Criterio Individual</div>
+                                        {studentsInGroup.map(student => {
+                                            const individualEval = evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+                                            const isPresent = individualEval?.attendance !== 'absent';
+                                            const studentRole = planningAssignments[service.id]?.[student.nre];
+                                            return (
+                                                <div key={student.nre} className="p-2 font-semibold text-center border-b border-r bg-gray-100 flex flex-col items-center justify-between gap-1">
+                                                    <img src={student.photoUrl || `https://i.pravatar.cc/150?u=${student.nre}`} className="w-12 h-12 rounded-full border-2 border-white" alt={student.nombre} />
+                                                    <p className="text-sm font-bold">{student.apellido1}, {student.nombre.toUpperCase()}</p>
+                                                    {studentRole && <span className="text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{studentRole}</span>}
+                                                    <div className="mt-1">
+                                                        <label className={`text-xs font-bold px-2 py-1 rounded-full cursor-pointer ${isPresent ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                            <input type="checkbox" checked={isPresent} onChange={e => handleIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1 h-3 w-3"/>
+                                                            {isPresent ? 'Presente' : 'Ausente'}
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                        
+                                        {/* Rubric Rows */}
+                                        {INDIVIDUAL_EVALUATION_ITEMS.map(item => (
+                                            <React.Fragment key={item.id}>
+                                                <div className="p-3 border-b border-r text-sm flex items-center bg-gray-50 sticky left-0 z-10">{item.text}</div>
+                                                {studentsInGroup.map(student => {
                                                     const individualEval = evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
                                                     const isPresent = individualEval?.attendance !== 'absent';
-                                                    const broughtMaterials = individualEval?.broughtMaterials ?? true;
-                                                    const studentRole = planningAssignments[service.id]?.[student.nre];
-
+                                                    const currentScore = individualEval?.scores.find(s => s.itemId === item.id)?.score ?? '';
                                                     return (
-                                                        <details key={student.nre} className="bg-white p-3 rounded-md border">
-                                                            <summary className="font-semibold text-md cursor-pointer flex justify-between items-center">
-                                                                <div className="flex items-center">
-                                                                    <span className="text-sm text-gray-500 w-6">{index + 1}.</span>
-                                                                    <span>{student.apellido1} {student.apellido2}, {student.nombre}</span>
-                                                                    {studentRole && (
-                                                                        <span className="ml-2 text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{studentRole}</span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className={`text-xs font-bold px-2 py-1 rounded-full ${isPresent ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                                        <input type="checkbox" checked={isPresent} onChange={e => handleIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1"/>
-                                                                        {isPresent ? 'Presente' : 'Ausente'}
-                                                                    </label>
-                                                                    {isPresent && (
-                                                                        <label className={`text-xs font-bold px-2 py-1 rounded-full cursor-pointer ${broughtMaterials ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                                                                            <input 
-                                                                                type="checkbox" 
-                                                                                checked={broughtMaterials} 
-                                                                                onChange={e => handleIndividualBroughtMaterialsChange(student.nre, e.target.checked)} 
-                                                                                className="mr-1"
-                                                                            />
-                                                                            {broughtMaterials ? 'Trae Fichas' : 'Sin Fichas'}
-                                                                        </label>
-                                                                    )}
-                                                                </div>
-                                                            </summary>
-                                                            {isPresent && (
-                                                                <div className="mt-4 pt-4 border-t space-y-3">
-                                                                    {INDIVIDUAL_EVALUATION_ITEMS.map(item => {
-                                                                        const currentScore = individualEval?.scores.find(s => s.itemId === item.id)?.score ?? '';
-                                                                        return (
-                                                                            <div key={item.id} className="grid grid-cols-4 items-center gap-4 text-sm">
-                                                                                <label className="col-span-3 text-gray-700">{item.text}</label>
-                                                                                <input
-                                                                                    type="number"
-                                                                                    value={currentScore}
-                                                                                    onChange={e => handleIndividualScoreChange(student.nre, item.id, parseFloat(e.target.value))}
-                                                                                    min="0"
-                                                                                    max={item.points}
-                                                                                    step="0.01"
-                                                                                    placeholder={`Max: ${item.points}`}
-                                                                                    className="p-2 border rounded-md w-24 text-center"
-                                                                                />
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                    <div>
-                                                                        <label className="block text-sm font-medium text-gray-700 mt-4">Observación Individual</label>
-                                                                        <textarea 
-                                                                            value={individualEval?.observation || ''}
-                                                                            onChange={e => handleIndividualObservationChange(student.nre, e.target.value)}
-                                                                            rows={2} className="w-full mt-1 p-2 border rounded-md"></textarea>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </details>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-
-                                {activeEvalTab === 'pre-service' && (
-                                    <>
-                                        <div className="mb-6">
-                                            <h4 className="font-semibold text-lg text-blue-800 mb-3">Observación Grupal (Día Previo)</h4>
-                                            <textarea 
-                                                value={preServiceGroupEval?.observation || ''}
-                                                onChange={e => handlePreServiceGroupObservationChange(groupId, e.target.value)}
-                                                placeholder="Anotaciones sobre la preparación y organización del grupo..."
-                                                rows={4} className="w-full mt-1 p-2 border rounded-md"></textarea>
-                                        </div>
-                                        
-                                        <div>
-                                            <h4 className="font-semibold text-lg text-green-800 mb-3">Observaciones Individuales (Día Previo)</h4>
-                                            <div className="space-y-4">
-                                                 {studentsInGroup.map((student, index) => {
-                                                    const preServiceIndEval = evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
-                                                    const isPresent = preServiceIndEval?.attendance !== 'absent';
-                                                    const studentRole = planningAssignments[service.id]?.[student.nre];
-
-                                                    return (
-                                                        <div key={student.nre} className="bg-white p-3 rounded-md border">
-                                                            <div className="flex justify-between items-center">
-                                                                <div className="font-semibold flex items-center">
-                                                                    <span>{index + 1}. {student.apellido1} {student.apellido2}, {student.nombre}</span>
-                                                                    {studentRole && (
-                                                                        <span className="ml-2 text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{studentRole}</span>
-                                                                    )}
-                                                                </div>
-                                                                <label className={`text-xs font-bold px-2 py-1 rounded-full ${isPresent ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                                    <input type="checkbox" checked={isPresent} onChange={e => handlePreServiceIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1"/>
-                                                                    {isPresent ? 'Presente' : 'Ausente'}
-                                                                </label>
-                                                            </div>
-                                                            {isPresent && (
-                                                                <div className="mt-3 pt-3 border-t space-y-4">
-                                                                     <div>
-                                                                        <h5 className="text-sm font-semibold text-gray-700 mb-2">Evaluación Simple de Conducta en Clase</h5>
-                                                                        <div className="space-y-2">
-                                                                            {PRE_SERVICE_BEHAVIOR_ITEMS.map(item => (
-                                                                                <div key={item.id} className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
-                                                                                    <p className="text-sm text-gray-600">{item.text}</p>
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        {BEHAVIOR_SCORE_LEVELS.map(level => (
-                                                                                            <button
-                                                                                                key={level.value}
-                                                                                                onClick={() => handlePreServiceBehaviorChange(student.nre, item.id, level.value)}
-                                                                                                className={`flex-1 text-xs font-semibold px-2 py-1 rounded-md transition-all ${preServiceIndEval?.behaviorScores?.[item.id] === level.value ? `${level.color} ring-2 ${level.ringColor}` : 'bg-gray-200 hover:bg-gray-300'}`}
-                                                                                            >
-                                                                                                {level.label}
-                                                                                            </button>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                    
-                                                                    <div>
-                                                                        <label className="block text-sm font-medium text-gray-700 mt-2">Observaciones adicionales</label>
-                                                                        <textarea
-                                                                            value={preServiceIndEval?.observation || ''}
-                                                                            onChange={e => handlePreServiceIndividualObservationChange(student.nre, e.target.value)}
-                                                                            placeholder="Anotaciones individuales sobre el alumno..."
-                                                                            rows={2}
-                                                                            className="w-full mt-1 p-2 border rounded-md text-sm"
-                                                                        ></textarea>
-                                                                    </div>
-                                                                </div>
+                                                        <div key={student.nre} className="p-3 border-b border-r flex items-center justify-center">
+                                                            {isPresent ? (
+                                                                <input
+                                                                    type="number" value={currentScore}
+                                                                    onChange={e => handleIndividualScoreChange(student.nre, item.id, parseFloat(e.target.value))}
+                                                                    min="0" max={item.points} step="0.01" placeholder={`${item.points} pts`}
+                                                                    className="p-2 border rounded-md w-24 text-center focus:ring-teal-500 focus:border-teal-500"
+                                                                />
+                                                            ) : (
+                                                                <span className="text-xs font-semibold text-red-600">-</span>
                                                             )}
                                                         </div>
-                                                    );
-                                                 })}
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
+                                                    )
+                                                })}
+                                            </React.Fragment>
+                                        ))}
 
+                                        {/* Observation Row */}
+                                        <div className="p-3 border-r font-semibold text-sm bg-gray-50 sticky left-0 z-10">Observación Individual</div>
+                                        {studentsInGroup.map(student => {
+                                             const individualEval = evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+                                             const isPresent = individualEval?.attendance !== 'absent';
+                                            return (
+                                                <div key={student.nre} className="p-2 border-r flex items-center justify-center">
+                                                    {isPresent ? (
+                                                        <button 
+                                                            onClick={() => setObservationModal({isOpen: true, student})} 
+                                                            className="text-sm text-blue-600 hover:text-blue-800 font-semibold bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md">
+                                                            Añadir/Ver
+                                                        </button>
+                                                    ) : null}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
                             </div>
-                        </details>
-                    )
-                })}
-            </div>
+                            )
+                        })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeEvalTab === 'pre-service' && (
+                 <div className="space-y-12">
+                     <div className="mb-8">
+                         <h3 className="text-xl font-bold text-gray-800 mb-4">Observación Grupal (Día Previo)</h3>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {assignedGroups.map(groupId => {
+                                const preServiceGroupEval = evaluations.preServiceGroup.find(e => e.serviceId === service.id && e.groupId === groupId);
+                                return (
+                                    <div key={groupId} className="bg-gray-50 p-3 rounded-lg">
+                                        <label className="block font-semibold text-gray-700">{groupId}</label>
+                                        <textarea 
+                                            value={preServiceGroupEval?.observation || ''}
+                                            onChange={e => handlePreServiceGroupObservationChange(groupId, e.target.value)}
+                                            placeholder="Anotaciones sobre la preparación..."
+                                            rows={4} className="w-full mt-1 p-2 border rounded-md"></textarea>
+                                    </div>
+                                )
+                            })}
+                         </div>
+                     </div>
+
+                    <div>
+                        <h3 className="text-xl font-bold text-gray-800 mb-4">Evaluaciones Individuales de Conducta (Día Previo)</h3>
+                         <div className="space-y-8">
+                            {assignedGroups.map(groupId => {
+                                const studentsInGroup = students
+                                    .filter(s => studentGroupAssignments[s.nre] === groupId)
+                                    .sort((a, b) => `${a.apellido1} ${a.apellido2} ${a.nombre}`.localeCompare(`${b.apellido1} ${b.apellido2} ${b.nombre}`));
+                                
+                                if (studentsInGroup.length === 0) return null;
+
+                                return (
+                                <div key={groupId}>
+                                    <h4 className="font-semibold text-lg text-gray-700 mb-3 bg-gray-100 p-2 rounded-md">{groupId}</h4>
+                                    <div className="overflow-x-auto border border-gray-200 rounded-lg bg-white">
+                                        <div className="grid" style={{ gridTemplateColumns: `minmax(300px, 2fr) repeat(${studentsInGroup.length}, minmax(130px, 1fr))` }}>
+                                            {/* Header Row */}
+                                            <div className="p-3 font-semibold bg-gray-100 border-b border-r text-sm sticky left-0 z-10">Criterio de Conducta</div>
+                                            {studentsInGroup.map(student => {
+                                                const preServiceIndEval = evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+                                                const isPresent = preServiceIndEval?.attendance !== 'absent';
+                                                const studentRole = planningAssignments[service.id]?.[student.nre];
+                                                return (
+                                                    <div key={student.nre} className="p-2 font-semibold text-center border-b border-r bg-gray-100 flex flex-col items-center justify-between gap-1">
+                                                        <img src={student.photoUrl || `https://i.pravatar.cc/150?u=${student.nre}`} className="w-12 h-12 rounded-full border-2 border-white" alt={student.nombre} />
+                                                        <p className="text-sm font-bold">{student.apellido1}, {student.nombre.toUpperCase()}</p>
+                                                        {studentRole && <span className="text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">{studentRole}</span>}
+                                                        <div className="mt-1">
+                                                            <label className={`text-xs font-bold px-2 py-1 rounded-full cursor-pointer ${isPresent ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                                <input type="checkbox" checked={isPresent} onChange={e => handlePreServiceIndividualAttendanceChange(student.nre, e.target.checked ? 'present' : 'absent')} className="mr-1 h-3 w-3"/>
+                                                                {isPresent ? 'Presente' : 'Ausente'}
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                            
+                                            {/* Rubric Rows */}
+                                            {PRE_SERVICE_BEHAVIOR_ITEMS.map(item => (
+                                                <React.Fragment key={item.id}>
+                                                    <div className="p-3 border-b border-r text-sm flex items-center bg-gray-50 sticky left-0 z-10">{item.text}</div>
+                                                    {studentsInGroup.map(student => {
+                                                        const preServiceIndEval = evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+                                                        const isPresent = preServiceIndEval?.attendance !== 'absent';
+                                                        const currentScore = preServiceIndEval?.behaviorScores?.[item.id];
+                                                        return (
+                                                            <div key={student.nre} className="p-2 border-b border-r flex items-center justify-center">
+                                                                {isPresent ? (
+                                                                    <div className="flex items-center justify-center gap-1.5">
+                                                                        {behaviorScoreLevels.map(level => (
+                                                                            <button
+                                                                                key={level.value}
+                                                                                onClick={() => handlePreServiceBehaviorChange(student.nre, item.id, level.value)}
+                                                                                className={`w-9 h-9 flex items-center justify-center rounded-full font-bold text-sm transition-all ${level.className} ${currentScore === level.value ? level.selectedClassName : 'opacity-70 hover:opacity-100'}`}
+                                                                                title={BEHAVIOR_SCORE_LEVELS.find(l => l.value === level.value)?.label}
+                                                                            >
+                                                                                {level.label}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : <span className="text-xs font-semibold text-red-600">-</span>}
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </React.Fragment>
+                                            ))}
+
+                                            {/* Observation Row */}
+                                            <div className="p-3 border-r font-semibold text-sm bg-gray-50 sticky left-0 z-10">Observación Individual</div>
+                                            {studentsInGroup.map(student => {
+                                                const preServiceIndEval = evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === student.nre);
+                                                const isPresent = preServiceIndEval?.attendance !== 'absent';
+                                                return (
+                                                    <div key={student.nre} className="p-2 border-r flex items-center justify-center">
+                                                        {isPresent ? (
+                                                            <button 
+                                                                onClick={() => setPreServiceObservationModal({isOpen: true, student})} 
+                                                                className="text-sm text-blue-600 hover:text-blue-800 font-semibold bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md">
+                                                                Añadir/Ver
+                                                            </button>
+                                                        ) : null}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {observationModal.isOpen && observationModal.student && (
+                <ObservationModal
+                    student={observationModal.student}
+                    initialObservation={evaluations.individual.find(e => e.serviceId === service.id && e.studentNre === observationModal.student!.nre)?.observation || ''}
+                    onClose={() => setObservationModal({isOpen: false, student: null})}
+                    onSave={handleSaveObservation}
+                />
+            )}
+
+            {preServiceObservationModal.isOpen && preServiceObservationModal.student && (
+                <ObservationModal
+                    student={preServiceObservationModal.student}
+                    initialObservation={evaluations.preServiceIndividual.find(e => e.serviceId === service.id && e.studentNre === preServiceObservationModal.student!.nre)?.observation || ''}
+                    onClose={() => setPreServiceObservationModal({isOpen: false, student: null})}
+                    onSave={handleSavePreServiceObservation}
+                />
+            )}
         </div>
     );
 };
