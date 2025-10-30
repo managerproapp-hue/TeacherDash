@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Student, StudentPracticalExam, ExamType } from '../types';
 import { PRACTICAL_EXAM_RUBRIC_T1, PRACTICAL_EXAM_RUBRIC_T2, SCORE_LEVELS } from '../constants';
-import { TrashIcon, CheckIcon } from './icons';
+import { TrashIcon, CheckIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon } from './icons';
 
 interface ExamenesPracticosViewProps {
   students: Student[];
@@ -49,6 +49,7 @@ const ExamenesPracticosView: React.FC<ExamenesPracticosViewProps> = ({ students,
     const [activeTab, setActiveTab] = useState<ExamType>('T1');
     const [selectedStudentNre, setSelectedStudentNre] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [isStudentListCollapsed, setIsStudentListCollapsed] = useState(false);
     
     type SaveStatus = 'idle' | 'saving' | 'saved';
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -218,46 +219,64 @@ const ExamenesPracticosView: React.FC<ExamenesPracticosViewProps> = ({ students,
 
             <div className="flex flex-col md:flex-row gap-8">
                 {/* Student List */}
-                <aside className="w-full md:w-1/3 lg:w-1/4">
-                    <div className="bg-white p-4 rounded-lg shadow-md h-full flex flex-col">
-                        <h2 className="text-lg font-bold text-gray-800 mb-3">Lista de Alumnos</h2>
-                        <input 
-                            type="text"
-                            placeholder="Buscar alumno..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3"
-                        />
-                        <div className="flex-1 overflow-y-auto pr-2">
+                <aside className={`flex-shrink-0 transition-all duration-300 ease-in-out ${isStudentListCollapsed ? 'w-full md:w-20' : 'w-full md:w-1/3 lg:w-1/4'}`}>
+                    <div className={`bg-white rounded-lg shadow-md h-full flex flex-col ${isStudentListCollapsed ? 'p-2' : 'p-4'}`}>
+                        {!isStudentListCollapsed && (
+                            <>
+                                <h2 className="text-lg font-bold text-gray-800 mb-3">Lista de Alumnos</h2>
+                                <input 
+                                    type="text"
+                                    placeholder="Buscar alumno..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3"
+                                />
+                            </>
+                        )}
+                        <div className={`flex-1 overflow-y-auto ${isStudentListCollapsed ? '' : 'pr-2'}`}>
                             {filteredStudents.map(student => (
                                 <button
                                     key={student.nre}
                                     onClick={() => setSelectedStudentNre(student.nre)}
-                                    className={`w-full flex items-center text-left p-2 rounded-lg mb-1 transition-colors ${
+                                    title={isStudentListCollapsed ? `${student.apellido1} ${student.apellido2}, ${student.nombre}` : undefined}
+                                    className={`w-full flex items-center text-left p-2 rounded-lg mb-1 transition-colors relative ${
                                         selectedStudentNre === student.nre ? 'bg-teal-100' : 'hover:bg-gray-100'
-                                    }`}
+                                    } ${isStudentListCollapsed ? 'justify-center' : ''}`}
                                 >
                                     <img
-                                        className="h-10 w-10 rounded-full mr-3"
+                                        className="h-10 w-10 rounded-full object-cover flex-shrink-0"
                                         src={student.photoUrl || `https://i.pravatar.cc/150?u=${student.nre}`}
-                                        alt=""
+                                        alt={student.nombre}
                                     />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-semibold text-sm text-gray-800 truncate">{student.apellido1} {student.apellido2}, {student.nombre}</p>
-                                        <p className="text-xs text-gray-500">{student.grupo}</p>
-                                    </div>
+                                    {!isStudentListCollapsed && (
+                                        <div className="flex-1 min-w-0 ml-3">
+                                            <p className="font-semibold text-sm text-gray-800 truncate">{student.apellido1} {student.apellido2}, {student.nombre}</p>
+                                            <p className="text-xs text-gray-500">{student.grupo}</p>
+                                        </div>
+                                    )}
                                     {gradedStudentsNREs.has(student.nre) && (
-                                        <div className="w-2 h-2 bg-green-500 rounded-full ml-2" title="Evaluado"></div>
+                                        isStudentListCollapsed 
+                                        ? <div className="absolute bottom-1 right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" title="Evaluado"></div>
+                                        : <div className="w-2 h-2 bg-green-500 rounded-full ml-2" title="Evaluado"></div>
                                     )}
                                 </button>
                             ))}
                             {filteredStudents.length === 0 && <p className="text-center text-gray-500 pt-8">No se encontraron alumnos.</p>}
                         </div>
+                        <div className="pt-2 border-t border-gray-200 mt-2">
+                            <button
+                                onClick={() => setIsStudentListCollapsed(!isStudentListCollapsed)}
+                                className="w-full flex items-center justify-center p-2 text-gray-500 hover:bg-gray-200 hover:text-gray-800 rounded-md"
+                                title={isStudentListCollapsed ? "Expandir lista" : "Contraer lista"}
+                            >
+                                {isStudentListCollapsed ? <ChevronDoubleRightIcon className="h-5 w-5" /> : <ChevronDoubleLeftIcon className="h-5 w-5" />}
+                            </button>
+                        </div>
                     </div>
                 </aside>
 
                 {/* Grading Area */}
-                <main className="w-full md:w-2/3 lg:w-3/4">
+                <main className="flex-1">
                     {selectedStudent ? (
                         <div className="bg-white p-6 rounded-lg shadow-md">
                             <div className="flex justify-between items-start mb-4 pb-4 border-b">

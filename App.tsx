@@ -18,6 +18,8 @@ const GestionAcademicaView = lazy(() => import('./components/GestionAcademicaVie
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeView, setActiveView] = useState<NavItemType>('Dashboard');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
   const [students, setStudents] = useState<Student[]>(() => {
     try {
       const savedStudents = localStorage.getItem('teacher-dashboard-students');
@@ -73,6 +75,16 @@ const App: React.FC = () => {
       return {};
     }
   });
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1024px)');
+    setIsSidebarCollapsed(mediaQuery.matches);
+
+    const handler = (e: MediaQueryListEvent) => setIsSidebarCollapsed(e.matches);
+    mediaQuery.addEventListener('change', handler);
+
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('teacher-dashboard-students', JSON.stringify(students));
@@ -157,7 +169,12 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-100 font-sans">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} />
+      <Sidebar 
+        activeView={activeView} 
+        setActiveView={setActiveView}
+        isSidebarCollapsed={isSidebarCollapsed}
+        setIsSidebarCollapsed={setIsSidebarCollapsed}
+      />
       <main className="flex-1 overflow-y-auto">
         <Suspense fallback={<LoadingSpinner />}>
           {renderView()}

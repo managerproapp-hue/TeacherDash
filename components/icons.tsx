@@ -3,7 +3,7 @@ import React from 'react';
 const Icon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    className="h-6 w-6 mr-3"
+    className="h-6 w-6"
     fill="none"
     viewBox="0 0 24 24"
     stroke="currentColor"
@@ -178,5 +178,17 @@ export const LinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 export const LockClosedIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <Icon {...props}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    </Icon>
+);
+
+export const ChevronDoubleLeftIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <Icon {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+    </Icon>
+);
+
+export const ChevronDoubleRightIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <Icon {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 4.5l7.5 7.5-7.5 7.5m6-15l7.5 7.5-7.5 7.5" />
     </Icon>
 );
