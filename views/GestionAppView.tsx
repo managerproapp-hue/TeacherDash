@@ -62,6 +62,21 @@ const RoleModal: React.FC<{
     );
 };
 
+const BACKUP_OPTIONS_MAP: Record<string, string> = {
+    'students': 'Alumnos',
+    'practiceGroups': 'Grupos de Práctica',
+    'services': 'Servicios Planificados',
+    'serviceEvaluations': 'Evaluaciones de Servicios',
+    'serviceRoles': 'Roles de Servicio',
+    'entryExitRecords': 'Registro de Salidas/Entradas',
+    'practicalExamEvaluations': 'Evaluaciones de Ex. Prácticos',
+    'academicGrades': 'Calificaciones (Módulo Principal)',
+    'courseGrades': 'Calificaciones (Otros Módulos)',
+    'teacher-app-data': 'Datos del Profesor',
+    'institute-app-data': 'Datos del Instituto',
+};
+const backupOptions = Object.keys(BACKUP_OPTIONS_MAP);
+
 
 const GestionAppView: React.FC = () => {
     const { 
@@ -75,14 +90,8 @@ const GestionAppView: React.FC = () => {
     const [currentInstituteData, setCurrentInstituteData] = useState(instituteData);
     const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
     const [editingRole, setEditingRole] = useState<ServiceRole | null>(null);
-    const [backupKeys, setBackupKeys] = useState<string[]>([]);
+    const [backupKeys, setBackupKeys] = useState<string[]>(backupOptions);
     
-    const backupOptions = useMemo(() => [
-        'students', 'practiceGroups', 'services', 'serviceEvaluations', 
-        'serviceRoles', 'entryExitRecords', 'practicalExamEvaluations', 
-        'teacher-app-data', 'institute-app-data', 'academicGrades', 'courseGrades'
-    ], []);
-
     const handleLogoChange = (setter: React.Dispatch<React.SetStateAction<any>>, field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -150,7 +159,7 @@ const GestionAppView: React.FC = () => {
         const a = document.createElement('a');
         a.href = url;
         const date = new Date().toISOString().split('T')[0];
-        a.download = `backup-teacherdash-${date}.json`;
+        a.download = `backup-TeacherDash-${date}.json`;
         a.click();
         URL.revokeObjectURL(url);
         addToast('Copia de seguridad descargada.', 'success');
@@ -286,7 +295,7 @@ const GestionAppView: React.FC = () => {
                                     {backupOptions.map(key => (
                                         <label key={key} className="flex items-center">
                                             <input type="checkbox" checked={backupKeys.includes(key)} onChange={() => toggleBackupKey(key)} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                                            <span className="ml-2">{key}</span>
+                                            <span className="ml-2">{BACKUP_OPTIONS_MAP[key]}</span>
                                         </label>
                                     ))}
                                 </div>
