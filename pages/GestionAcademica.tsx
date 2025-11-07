@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 // FIX: Import CourseModuleGrades to use as a type annotation.
 // FIX: Add GradeValue to imports for explicit typing.
@@ -292,8 +293,6 @@ const GestionAcademica: React.FC<GestionAcademicaProps> = ({
                                     <td className="p-1 border text-left font-semibold text-gray-800">{`${student.apellido1} ${student.apellido2}, ${student.nombre}`}</td>
                                     {COURSE_MODULES.flatMap(module => {
                                         const grades: Partial<CourseModuleGrades> = localCourseGrades[student.id]?.[module] || {};
-                                        // FIX: The comment syntax was incorrect for a JavaScript block within JSX, causing a parsing error.
-                                        // Also, `Object.values` on a partial type can return `unknown[]`. This is fixed by explicitly casting the result to the expected array type.
                                         const validGrades = (Object.values(grades) as (GradeValue | undefined)[])
                                             .map(g => parseFloat(String(g)))
                                             .filter(g => !isNaN(g));
