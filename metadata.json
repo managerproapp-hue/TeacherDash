@@ -1,0 +1,5 @@
+{
+  "name": " 1.1.2.4 - Student Manager for Culinary  - (reestructurada para revisar en web)",
+  "description": "An application to manage students for the Culinary Products module. Upload a CSV file to view student data in an organized, alphabetical list.",
+  "requestFramePermissions": []
+}
