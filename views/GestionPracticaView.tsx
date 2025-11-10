@@ -689,7 +689,13 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            generatePlanningPDF(editedService, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            // FIX: Ensure service object has all necessary properties before passing to PDF generator.
+            const serviceForPDF = {
+                ...editedService,
+                assignedGroups: editedService.assignedGroups || { comedor: [], takeaway: [] },
+                elaborations: editedService.elaborations || { comedor: [], takeaway: [] }
+            };
+            generatePlanningPDF(serviceForPDF, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF del planning:", error);
             addToast('Error al generar el planning. Revisa que todos los datos del servicio estén correctos.', 'error');
@@ -702,7 +708,12 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            generateSeguimientoPDF(editedService, students, practiceGroups, serviceRoles, teacherData, instituteData);
+             // FIX: Ensure service object has all necessary properties before passing to PDF generator.
+            const serviceForPDF = {
+                ...editedService,
+                assignedGroups: editedService.assignedGroups || { comedor: [], takeaway: [] }
+            };
+            generateSeguimientoPDF(serviceForPDF, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar la Ficha de Seguimiento:", error);
             addToast('Error al generar la ficha. Revisa los datos del servicio.', 'error');
@@ -728,7 +739,12 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            generateDetailedStudentReportsPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            const serviceForPDF = {
+                ...editedService,
+                assignedGroups: editedService.assignedGroups || { comedor: [], takeaway: [] },
+                elaborations: editedService.elaborations || { comedor: [], takeaway: [] }
+            };
+            generateDetailedStudentReportsPDF(serviceForPDF, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF de informes de alumnos:", error);
             addToast('Error al generar los informes individuales. Revisa los datos.', 'error');
