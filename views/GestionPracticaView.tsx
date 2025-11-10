@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { Service, ServiceEvaluation, Elaboration, Student, PracticeGroup, ServiceRole, TeacherData, InstituteData } from '../types';
-import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon, PrinterIcon, LockClosedIcon, LockOpenIcon } from '../components/icons';
+import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon, PrinterIcon, LockClosedIcon, LockOpenIcon, UsersIcon } from '../components/icons';
 import { PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_RATING_MAP, GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS } from '../data/constants';
 import { useAppContext } from '../context/AppContext';
 
@@ -225,7 +225,6 @@ const generateServiceReportPDF = (
         return false;
     };
     
-    // FIX: The 'participatingGroups' variable was defined in a nested scope, causing reference errors. It has been moved to the function's top-level scope to be accessible throughout.
     const participatingGroups = practiceGroups.filter(g => new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]).has(g.id));
 
     // --- START DOCUMENT ---
@@ -310,6 +309,209 @@ const generateServiceReportPDF = (
 
     doc.save(`Informe_Servicio_${service.name.replace(/ /g, '_')}.pdf`);
 };
+
+// --- NEW DETAILED STUDENT REPORT PDF ---
+const generateDetailedStudentReportsPDF = (
+    service: Service,
+    evaluation: ServiceEvaluation,
+    allStudents: Student[],
+    practiceGroups: PracticeGroup[],
+    serviceRoles: ServiceRole[],
+    teacherData: TeacherData,
+    instituteData: InstituteData
+) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageMargin = 15;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const addImageToPdf = (imageData: string | null, x: number, y: number, w: number, h: number) => {
+        if (imageData && imageData.startsWith('data:image')) {
+            try {
+                const imageType = imageData.substring(imageData.indexOf('/') + 1, imageData.indexOf(';'));
+                doc.addImage(imageData, imageType.toUpperCase(), x, y, w, h);
+            } catch (e) { console.error("Error adding image:", e); }
+        }
+    };
+
+    const participatingStudentIds = new Set(
+        practiceGroups
+            .filter(g => new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]).has(g.id))
+            .flatMap(g => g.studentIds)
+    );
+
+    const participatingStudents = allStudents
+        .filter(s => participatingStudentIds.has(s.id))
+        .sort((a, b) => a.apellido1.localeCompare(b.apellido1) || a.nombre.localeCompare(b.nombre));
+
+    participatingStudents.forEach((student, index) => {
+        if (index > 0) {
+            doc.addPage();
+        }
+
+        let y = 0;
+
+        // --- PAGE HEADER ---
+        const didDrawPage = (data: any) => {
+            y = data.cursor.y;
+            // Header
+            doc.setFont('helvetica', 'normal');
+            addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
+            addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
+            doc.setFontSize(12);
+            doc.setTextColor(80);
+            doc.text(`Informe Detallado de Servicio: ${service.name}`, pageWidth / 2, 15, { align: 'center' });
+            doc.setFontSize(10);
+            const serviceDate = new Date(service.date + 'T12:00:00Z').toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            doc.text(serviceDate, pageWidth / 2, 20, { align: 'center' });
+            doc.setDrawColor(200);
+            doc.line(pageMargin, 25, pageWidth - pageMargin, 25);
+            
+            // Footer
+            doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
+            doc.setFontSize(8);
+            doc.text(`Página ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        };
+        
+        y = 30; // Initial Y position after header
+        
+        // --- STUDENT INFO ---
+        const studentGroup = practiceGroups.find(g => g.studentIds.includes(student.id));
+        const studentRole = serviceRoles.find(r => r.id === service.studentRoles.find(sr => sr.studentId === student.id)?.roleId);
+        
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${student.apellido1} ${student.apellido2}, ${student.nombre}`, pageMargin, y);
+        y += 7;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100);
+        doc.text(`Grupo: ${studentGroup?.name || 'N/A'}`, pageMargin, y);
+        doc.text(`Puesto: ${studentRole?.name || 'Sin Asignar'}`, pageWidth - pageMargin, y, { align: 'right' });
+        y += 8;
+
+        // --- PRE-SERVICE EVALUATION ---
+        Object.entries(evaluation.preService).sort(([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime()).forEach(([date, preServiceDay]) => {
+            const preEval = preServiceDay.individualEvaluations[student.id];
+            if (preEval) {
+                doc.setFontSize(12);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`Día Previo: ${preServiceDay.name || date}`, pageMargin, y);
+                y += 6;
+                
+                const basicsBody = [
+                    ['Asistencia', preEval.attendance ? 'Presente' : 'Ausente'],
+                    ['Fichas Técnicas', preEval.hasFichas ? 'Sí' : 'No'],
+                    ['Uniforme Completo', preEval.hasUniforme ? 'Sí' : 'No'],
+                    ['Material Necesario', preEval.hasMaterial ? 'Sí' : 'No'],
+                ];
+
+                (doc as any).autoTable({ startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } }, didDrawPage });
+                y = (doc as any).lastAutoTable.finalY + 5;
+                
+                const behaviorBody = PRE_SERVICE_BEHAVIOR_ITEMS.map(item => [item.label, BEHAVIOR_RATING_MAP.find(r => r.value === preEval.behaviorScores[item.id])?.symbol || '-']);
+                
+                (doc as any).autoTable({ startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, didDrawPage });
+                y = (doc as any).lastAutoTable.finalY;
+
+                if (preEval.observations) {
+                    y += 5;
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Observaciones del día previo:', pageMargin, y);
+                    y += 4;
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(80);
+                    doc.text(preEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
+                    y += 10;
+                }
+                 y += 5;
+            }
+        });
+
+        // --- SERVICE DAY EVALUATION ---
+        const serviceDayEval = evaluation.serviceDay.individualScores[student.id];
+        if (serviceDayEval) {
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Evaluación Individual (Día de Servicio)', pageMargin, y);
+            y += 6;
+
+            if (!serviceDayEval.attendance) {
+                 doc.setFontSize(11);
+                 doc.setTextColor(220, 53, 69); // Red
+                 doc.text('ALUMNO AUSENTE EN EL SERVICIO', pageMargin, y);
+                 y += 10;
+            } else {
+// FIX: Explicitly type individualBody as any[][] to allow pushing objects for styled cells in jspdf-autotable.
+                const individualBody: any[][] = INDIVIDUAL_EVALUATION_ITEMS.map((item, index) => [item.label, `${(serviceDayEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
+                const totalScore = serviceDayEval.scores.reduce((sum, score) => sum + (score || 0), 0);
+                individualBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
+                
+                (doc as any).autoTable({ startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] }, didDrawPage });
+                y = (doc as any).lastAutoTable.finalY;
+
+                if (serviceDayEval.observations) {
+                    y += 5;
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text('Observaciones del día de servicio:', pageMargin, y);
+                    y += 4;
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(80);
+                    doc.text(serviceDayEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
+                    y += 10;
+                }
+            }
+        }
+        y += 5;
+
+        // --- GROUP EVALUATION ---
+        const groupEval = studentGroup ? evaluation.serviceDay.groupScores[studentGroup.id] : null;
+        if (groupEval) {
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Evaluación Grupal (${studentGroup?.name})`, pageMargin, y);
+            y += 6;
+
+            const groupElaborations = [...service.elaborations.comedor, ...service.elaborations.takeaway].filter(e => e.responsibleGroupId === studentGroup?.id);
+            if (groupElaborations.length > 0) {
+                 doc.setFontSize(10);
+                 doc.setFont('helvetica', 'bold');
+                 doc.text('Elaboraciones del grupo:', pageMargin, y);
+                 y += 4;
+                 doc.setFont('helvetica', 'normal');
+                 groupElaborations.forEach(elab => {
+                    doc.text(`- ${elab.name}`, pageMargin + 2, y);
+                    y += 5;
+                 });
+            }
+
+// FIX: Explicitly type groupBody as any[][] to allow pushing objects for styled cells in jspdf-autotable.
+            const groupBody: any[][] = GROUP_EVALUATION_ITEMS.map((item, index) => [item.label, `${(groupEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
+            const totalGroupScore = groupEval.scores.reduce((sum, score) => sum + (score || 0), 0);
+            groupBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalGroupScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
+
+            (doc as any).autoTable({ startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] }, didDrawPage });
+            y = (doc as any).lastAutoTable.finalY;
+
+            if (groupEval.observations) {
+                y += 5;
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Observaciones del grupo:', pageMargin, y);
+                y += 4;
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(80);
+                doc.text(groupEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
+            }
+        }
+
+    });
+    
+    doc.save(`Informe_Detallado_${service.name.replace(/ /g, '_')}.pdf`);
+}
+
 
 const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({ 
     initialServiceId, initialServiceTab, clearInitialServiceContext 
@@ -412,6 +614,19 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         } catch (error) {
             console.error("Fallo al generar el PDF del informe:", error);
             addToast('Error al generar el informe. Revisa que todos los datos de evaluación estén completos.', 'error');
+        }
+    };
+
+    const handleGenerateStudentReports = () => {
+        if (!editedService || !editedEvaluation) {
+            addToast('Selecciona un servicio con evaluación para generar el informe.', 'error');
+            return;
+        }
+        try {
+            generateDetailedStudentReportsPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+        } catch (error) {
+            console.error("Fallo al generar el PDF de informes de alumnos:", error);
+            addToast('Error al generar los informes individuales. Revisa los datos.', 'error');
         }
     };
     
@@ -522,6 +737,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                         </div>
                     </div>
                     <div className="flex items-center space-x-2 flex-wrap gap-2">
+                        <button onClick={handleGenerateStudentReports} className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition"><UsersIcon className="w-5 h-5 mr-1" /> Informe por Alumno</button>
                         {isLocked && <button onClick={handleGenerateReport} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Informe de Servicio</button>}
                         <button onClick={handleGeneratePlanningPdf} className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"><PrinterIcon className="w-5 h-5 mr-1" /> Planning</button>
                         {!isLocked && <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition"><SaveIcon className="w-5 h-5 mr-1" /> Guardar</button>}
