@@ -161,8 +161,8 @@ const generatePlanningPDF = (
         });
     };
     
-    drawSection('SERVICIO DE COMEDOR', service.assignedGroups.comedor, service.elaborations?.comedor || []);
-    drawSection('SERVICIO DE TAKEAWAY', service.assignedGroups.takeaway, service.elaborations?.takeaway || []);
+    drawSection('SERVICIO DE COMEDOR', service.assignedGroups.comedor, service.elaborations.comedor);
+    drawSection('SERVICIO DE TAKEAWAY', service.assignedGroups.takeaway, service.elaborations.takeaway);
     
     addFooter();
     doc.save(`Planning_${service.name.replace(/ /g, '_')}.pdf`);
@@ -373,14 +373,17 @@ const generateDetailedStudentReportsPDF = (
             doc.addPage();
         }
         
-        addPageHeaderAndFooter({ pageNumber: doc.internal.getCurrentPageInfo().pageNumber });
+        let y = 0; // Reset y for each student's section of tables
+        const autoTableOptions = {
+            didDrawPage: addPageHeaderAndFooter,
+            margin: { top: 35, bottom: 20 }
+        };
 
-        let y = 35; 
-        
         // --- STUDENT INFO ---
         const studentGroup = practiceGroups.find(g => g.studentIds.includes(student.id));
         const studentRole = serviceRoles.find(r => r.id === service.studentRoles.find(sr => sr.studentId === student.id)?.roleId);
         
+        y = 35; 
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
         doc.text(`${student.apellido1} ${student.apellido2}, ${student.nombre}`, pageMargin, y);
@@ -396,36 +399,24 @@ const generateDetailedStudentReportsPDF = (
         Object.entries(evaluation.preService).sort(([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime()).forEach(([date, preServiceDay]) => {
             const preEval = preServiceDay.individualEvaluations[student.id];
             if (preEval) {
-                doc.setFontSize(12);
-                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12); doc.setFont('helvetica', 'bold');
                 doc.text(`Día Previo: ${preServiceDay.name || date}`, pageMargin, y);
                 y += 6;
                 
-                const basicsBody = [
-                    ['Asistencia', preEval.attendance ? 'Presente' : 'Ausente'],
-                    ['Fichas Técnicas', preEval.hasFichas ? 'Sí' : 'No'],
-                    ['Uniforme Completo', preEval.hasUniforme ? 'Sí' : 'No'],
-                    ['Material Necesario', preEval.hasMaterial ? 'Sí' : 'No'],
-                ];
-
-                (doc as any).autoTable({ startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } }, didDrawPage: addPageHeaderAndFooter });
+                const basicsBody = [['Asistencia', preEval.attendance ? 'Presente' : 'Ausente'], ['Fichas Técnicas', preEval.hasFichas ? 'Sí' : 'No'], ['Uniforme Completo', preEval.hasUniforme ? 'Sí' : 'No'], ['Material Necesario', preEval.hasMaterial ? 'Sí' : 'No']];
+                (doc as any).autoTable({ ...autoTableOptions, startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } } });
                 y = (doc as any).lastAutoTable.finalY + 5;
                 
                 const behaviorBody: any[][] = PRE_SERVICE_BEHAVIOR_ITEMS.map(item => [item.label, BEHAVIOR_RATING_MAP.find(r => r.value === preEval.behaviorScores[item.id])?.symbol || '-']);
-                
-                (doc as any).autoTable({ startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, didDrawPage: addPageHeaderAndFooter });
+                (doc as any).autoTable({ ...autoTableOptions, startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] } });
                 y = (doc as any).lastAutoTable.finalY;
 
                 if (preEval.observations) {
-                    y += 5;
-                    doc.setFontSize(10);
-                    doc.setFont('helvetica', 'bold');
+                    y += 5; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
                     doc.text('Observaciones del día previo:', pageMargin, y);
-                    y += 4;
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(80);
+                    y += 4; doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
                     doc.text(preEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y = (doc as any).lastAutoTable.finalY + 10;
+                    y += 10;
                 }
                  y += 5;
             }
@@ -434,34 +425,27 @@ const generateDetailedStudentReportsPDF = (
         // --- SERVICE DAY EVALUATION ---
         const serviceDayEval = evaluation.serviceDay.individualScores[student.id];
         if (serviceDayEval) {
-            doc.setFontSize(12);
-            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12); doc.setFont('helvetica', 'bold');
             doc.text('Evaluación Individual (Día de Servicio)', pageMargin, y);
             y += 6;
 
             if (!serviceDayEval.attendance) {
-                 doc.setFontSize(11);
-                 doc.setTextColor(220, 53, 69); // Red
+                 doc.setFontSize(11); doc.setTextColor(220, 53, 69); // Red
                  doc.text('ALUMNO AUSENTE EN EL SERVICIO', pageMargin, y);
                  y += 10;
             } else {
                 const individualBody: any[][] = INDIVIDUAL_EVALUATION_ITEMS.map((item, index) => [item.label, `${(serviceDayEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
                 const totalScore = serviceDayEval.scores.reduce((sum, score) => sum + (score || 0), 0);
                 individualBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
-                
-                (doc as any).autoTable({ startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] }, didDrawPage: addPageHeaderAndFooter });
+                (doc as any).autoTable({ ...autoTableOptions, startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] } });
                 y = (doc as any).lastAutoTable.finalY;
 
                 if (serviceDayEval.observations) {
-                    y += 5;
-                    doc.setFontSize(10);
-                    doc.setFont('helvetica', 'bold');
+                    y += 5; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
                     doc.text('Observaciones del día de servicio:', pageMargin, y);
-                    y += 4;
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(80);
+                    y += 4; doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
                     doc.text(serviceDayEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y = (doc as any).lastAutoTable.finalY + 10;
+                    y += 10;
                 }
             }
         }
@@ -470,39 +454,28 @@ const generateDetailedStudentReportsPDF = (
         // --- GROUP EVALUATION ---
         const groupEval = studentGroup ? evaluation.serviceDay.groupScores[studentGroup.id] : null;
         if (groupEval) {
-            doc.setFontSize(12);
-            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12); doc.setFont('helvetica', 'bold');
             doc.text(`Evaluación Grupal (${studentGroup?.name})`, pageMargin, y);
             y += 6;
 
-            const groupElaborations = [...(service.elaborations?.comedor || []), ...(service.elaborations?.takeaway || [])].filter(e => e.responsibleGroupId === studentGroup?.id);
+            const groupElaborations = [...service.elaborations.comedor, ...service.elaborations.takeaway].filter(e => e.responsibleGroupId === studentGroup?.id);
             if (groupElaborations.length > 0) {
-                 doc.setFontSize(10);
-                 doc.setFont('helvetica', 'bold');
+                 doc.setFontSize(10); doc.setFont('helvetica', 'bold');
                  doc.text('Elaboraciones del grupo:', pageMargin, y);
-                 y += 4;
-                 doc.setFont('helvetica', 'normal');
-                 groupElaborations.forEach(elab => {
-                    doc.text(`- ${elab.name}`, pageMargin + 2, y);
-                    y += 5;
-                 });
+                 y += 4; doc.setFont('helvetica', 'normal');
+                 groupElaborations.forEach(elab => { doc.text(`- ${elab.name}`, pageMargin + 2, y); y += 5; });
             }
 
             const groupBody: any[][] = GROUP_EVALUATION_ITEMS.map((item, index) => [item.label, `${(groupEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
             const totalGroupScore = groupEval.scores.reduce((sum, score) => sum + (score || 0), 0);
             groupBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalGroupScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
-
-            (doc as any).autoTable({ startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] }, didDrawPage: addPageHeaderAndFooter });
+            (doc as any).autoTable({ ...autoTableOptions, startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] } });
             y = (doc as any).lastAutoTable.finalY;
 
             if (groupEval.observations) {
-                y += 5;
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'bold');
+                y += 5; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
                 doc.text('Observaciones del grupo:', pageMargin, y);
-                y += 4;
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(80);
+                y += 4; doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
                 doc.text(groupEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
             }
         }
@@ -683,18 +656,29 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         }
     };
     
+    const sanitizeServiceForPDF = (service: Service): Service => {
+        return {
+            ...service,
+            assignedGroups: {
+                comedor: [],
+                takeaway: [],
+                ...(service.assignedGroups || {}),
+            },
+            elaborations: {
+                comedor: [],
+                takeaway: [],
+                ...(service.elaborations || {}),
+            },
+        };
+    };
+
     const handleGeneratePlanningPdf = () => {
         if (!editedService) {
             addToast('No hay un servicio seleccionado para generar el planning.', 'error');
             return;
         }
         try {
-            // FIX: Ensure service object has all necessary properties before passing to PDF generator.
-            const serviceForPDF = {
-                ...editedService,
-                assignedGroups: editedService.assignedGroups || { comedor: [], takeaway: [] },
-                elaborations: editedService.elaborations || { comedor: [], takeaway: [] }
-            };
+            const serviceForPDF = sanitizeServiceForPDF(editedService);
             generatePlanningPDF(serviceForPDF, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF del planning:", error);
@@ -708,11 +692,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-             // FIX: Ensure service object has all necessary properties before passing to PDF generator.
-            const serviceForPDF = {
-                ...editedService,
-                assignedGroups: editedService.assignedGroups || { comedor: [], takeaway: [] }
-            };
+            const serviceForPDF = sanitizeServiceForPDF(editedService);
             generateSeguimientoPDF(serviceForPDF, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar la Ficha de Seguimiento:", error);
@@ -726,7 +706,8 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            generateServiceReportPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            const serviceForPDF = sanitizeServiceForPDF(editedService);
+            generateServiceReportPDF(serviceForPDF, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF del informe:", error);
             addToast('Error al generar el informe. Revisa que todos los datos de evaluación estén completos.', 'error');
@@ -739,11 +720,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            const serviceForPDF = {
-                ...editedService,
-                assignedGroups: editedService.assignedGroups || { comedor: [], takeaway: [] },
-                elaborations: editedService.elaborations || { comedor: [], takeaway: [] }
-            };
+            const serviceForPDF = sanitizeServiceForPDF(editedService);
             generateDetailedStudentReportsPDF(serviceForPDF, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF de informes de alumnos:", error);
