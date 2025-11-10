@@ -334,6 +334,31 @@ const generateDetailedStudentReportsPDF = (
         }
     };
 
+    const addPageHeaderAndFooter = (data: any) => {
+        doc.setFont('helvetica', 'normal');
+        
+        // --- HEADER ---
+        addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
+        addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
+        doc.setFontSize(12);
+        doc.setTextColor(80);
+        doc.text(`Informe Detallado de Servicio: ${service.name}`, pageWidth / 2, 15, { align: 'center' });
+        doc.setFontSize(10);
+        const serviceDate = new Date(service.date + 'T12:00:00Z').toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        doc.text(serviceDate, pageWidth / 2, 20, { align: 'center' });
+        doc.setDrawColor(200);
+        doc.line(pageMargin, 28, pageWidth - pageMargin, 28);
+        
+        // --- FOOTER ---
+        doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        doc.text(`${instituteData.name || 'Instituto'} - ${teacherData.name || 'Profesor'}`, pageMargin, pageHeight - 10);
+        doc.text(`Página ${doc.internal.pages.length > 1 ? doc.internal.getCurrentPageInfo().pageNumber : 1}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        const date = new Date().toLocaleDateString('es-ES');
+        doc.text(date, pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
+    };
+
     const participatingStudentIds = new Set(
         practiceGroups
             .filter(g => new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]).has(g.id))
@@ -349,31 +374,7 @@ const generateDetailedStudentReportsPDF = (
             doc.addPage();
         }
 
-        let y = 0;
-
-        // --- PAGE HEADER ---
-        const didDrawPage = (data: any) => {
-            y = data.cursor.y;
-            // Header
-            doc.setFont('helvetica', 'normal');
-            addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
-            addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
-            doc.setFontSize(12);
-            doc.setTextColor(80);
-            doc.text(`Informe Detallado de Servicio: ${service.name}`, pageWidth / 2, 15, { align: 'center' });
-            doc.setFontSize(10);
-            const serviceDate = new Date(service.date + 'T12:00:00Z').toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            doc.text(serviceDate, pageWidth / 2, 20, { align: 'center' });
-            doc.setDrawColor(200);
-            doc.line(pageMargin, 25, pageWidth - pageMargin, 25);
-            
-            // Footer
-            doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
-            doc.setFontSize(8);
-            doc.text(`Página ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-        };
-        
-        y = 30; // Initial Y position after header
+        let y = 35; 
         
         // --- STUDENT INFO ---
         const studentGroup = practiceGroups.find(g => g.studentIds.includes(student.id));
@@ -406,12 +407,12 @@ const generateDetailedStudentReportsPDF = (
                     ['Material Necesario', preEval.hasMaterial ? 'Sí' : 'No'],
                 ];
 
-                (doc as any).autoTable({ startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } }, didDrawPage });
+                (doc as any).autoTable({ startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } }, didDrawPage: addPageHeaderAndFooter });
                 y = (doc as any).lastAutoTable.finalY + 5;
                 
                 const behaviorBody = PRE_SERVICE_BEHAVIOR_ITEMS.map(item => [item.label, BEHAVIOR_RATING_MAP.find(r => r.value === preEval.behaviorScores[item.id])?.symbol || '-']);
                 
-                (doc as any).autoTable({ startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, didDrawPage });
+                (doc as any).autoTable({ startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, didDrawPage: addPageHeaderAndFooter });
                 y = (doc as any).lastAutoTable.finalY;
 
                 if (preEval.observations) {
@@ -423,7 +424,7 @@ const generateDetailedStudentReportsPDF = (
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(80);
                     doc.text(preEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y += 10;
+                    y = doc.autoTable.previous.finalY + 10;
                 }
                  y += 5;
             }
@@ -443,12 +444,11 @@ const generateDetailedStudentReportsPDF = (
                  doc.text('ALUMNO AUSENTE EN EL SERVICIO', pageMargin, y);
                  y += 10;
             } else {
-// FIX: Explicitly type individualBody as any[][] to allow pushing objects for styled cells in jspdf-autotable.
                 const individualBody: any[][] = INDIVIDUAL_EVALUATION_ITEMS.map((item, index) => [item.label, `${(serviceDayEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
                 const totalScore = serviceDayEval.scores.reduce((sum, score) => sum + (score || 0), 0);
                 individualBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
                 
-                (doc as any).autoTable({ startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] }, didDrawPage });
+                (doc as any).autoTable({ startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] }, didDrawPage: addPageHeaderAndFooter });
                 y = (doc as any).lastAutoTable.finalY;
 
                 if (serviceDayEval.observations) {
@@ -460,7 +460,7 @@ const generateDetailedStudentReportsPDF = (
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(80);
                     doc.text(serviceDayEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y += 10;
+                    y = doc.autoTable.previous.finalY + 10;
                 }
             }
         }
@@ -487,12 +487,11 @@ const generateDetailedStudentReportsPDF = (
                  });
             }
 
-// FIX: Explicitly type groupBody as any[][] to allow pushing objects for styled cells in jspdf-autotable.
             const groupBody: any[][] = GROUP_EVALUATION_ITEMS.map((item, index) => [item.label, `${(groupEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
             const totalGroupScore = groupEval.scores.reduce((sum, score) => sum + (score || 0), 0);
             groupBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalGroupScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
 
-            (doc as any).autoTable({ startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] }, didDrawPage });
+            (doc as any).autoTable({ startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] }, didDrawPage: addPageHeaderAndFooter });
             y = (doc as any).lastAutoTable.finalY;
 
             if (groupEval.observations) {
@@ -506,7 +505,6 @@ const generateDetailedStudentReportsPDF = (
                 doc.text(groupEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
             }
         }
-
     });
     
     doc.save(`Informe_Detallado_${service.name.replace(/ /g, '_')}.pdf`);
