@@ -1,10 +1,129 @@
 import React, { useState, useMemo, useEffect } from 'react';
-// FIX: Add StudentCalculatedGrades to imports
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import { Student, CourseModuleGrades, GradeValue, StudentCalculatedGrades } from '../types';
 import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES } from '../data/constants';
 import { ClipboardListIcon, SaveIcon, ExportIcon } from '../components/icons';
-import { downloadPdfWithTables } from '../components/printUtils';
 import { useAppContext } from '../context/AppContext';
+
+const generateAcademicReportPDF = (
+    students: Student[],
+    finalGradesAndAverages: any,
+    localCourseGrades: any,
+    calculatedStudentGrades: Record<string, StudentCalculatedGrades>,
+    localAcademicGrades: any,
+    teacherData: any,
+    instituteData: any
+) => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageMargin = 10;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const addImageToPdf = (imageData: string | null, x: number, y: number, w: number, h: number) => {
+        if (imageData && imageData.startsWith('data:image')) {
+            try {
+                const imageType = imageData.substring(imageData.indexOf('/') + 1, imageData.indexOf(';'));
+                doc.addImage(imageData, imageType.toUpperCase(), x, y, w, h);
+            } catch (e) { console.error("Error adding image:", e); }
+        }
+    };
+
+    const addPageHeaderAndFooter = (data: any, title: string) => {
+        doc.setFont('helvetica', 'normal');
+        addImageToPdf(instituteData.logo, pageMargin, 5, 15, 15);
+        addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 5, 15, 15);
+        doc.setFontSize(14);
+        doc.setTextColor(80);
+        doc.text(title, pageWidth / 2, 15, { align: 'center' });
+        doc.setDrawColor(200);
+        doc.line(pageMargin, 22, pageWidth - pageMargin, 22);
+        
+        doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        doc.text(`Página ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    };
+
+    // --- Table 1: Módulo Principal ---
+    const principalHeadRow1: any = [
+        { content: 'Alumno', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+        ...ACADEMIC_EVALUATION_STRUCTURE.periods.map(p => ({ content: p.name, colSpan: p.instruments.length + 1, styles: { halign: 'center' } })),
+    ];
+    const principalHeadRow2: any = ACADEMIC_EVALUATION_STRUCTURE.periods.flatMap(p => [
+        ...p.instruments.map(i => `${i.name}\n(${i.weight * 100}%)`),
+        { content: 'MEDIA', styles: { fontStyle: 'bold' } }
+    ]);
+    
+    const principalBody = Object.values(finalGradesAndAverages.studentGroups).flat().map((student: any) => {
+        const studentRow: (string | number | null)[] = [`${student.apellido1} ${student.apellido2}, ${student.nombre}`];
+        ACADEMIC_EVALUATION_STRUCTURE.periods.forEach(period => {
+            period.instruments.forEach(instrument => {
+                let grade: number | null = null;
+                if (instrument.type === 'manual') {
+                    const manualGrade = localAcademicGrades[student.id]?.[period.key]?.manualGrades?.[instrument.key];
+                    grade = (manualGrade === null || manualGrade === undefined) ? null : parseFloat(String(manualGrade));
+                } else {
+                    if (instrument.key === 'servicios') grade = calculatedStudentGrades[student.id]?.serviceAverage ?? null;
+                    else {
+                        const examKey = { 'exPracticoT1': 't1', 'exPracticoT2': 't2', 'exPracticoRec': 'rec' }[instrument.key] as 't1' | 't2' | 'rec';
+                        if (examKey) grade = calculatedStudentGrades[student.id]?.practicalExams[examKey] ?? null;
+                    }
+                }
+                studentRow.push(grade !== null ? grade.toFixed(2) : '-');
+            });
+            const avg = finalGradesAndAverages.studentGrades[student.id].averages[period.key];
+            studentRow.push(avg !== null ? avg.toFixed(2) : '-');
+        });
+        return studentRow;
+    });
+
+    (doc as any).autoTable({
+        head: [principalHeadRow1, principalHeadRow2],
+        body: principalBody,
+        startY: 25,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1, overflow: 'linebreak' },
+        headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 6 },
+        didDrawPage: (data: any) => addPageHeaderAndFooter(data, "Informe Académico - Módulo Principal"),
+    });
+
+    // --- Table 2: Otros Módulos ---
+    doc.addPage('landscape');
+
+    const otrosHeadRow1 = [
+        { content: 'Alumno', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+        ...COURSE_MODULES.map(module => ({ content: module, colSpan: 5, styles: { halign: 'center' } }))
+    ];
+    const otrosHeadRow2 = COURSE_MODULES.flatMap(() => ['T1', 'T2', 'T3', 'REC', { content: 'FINAL', styles: { fontStyle: 'bold' } }]);
+    
+    const otrosBody = Object.values(finalGradesAndAverages.studentGroups).flat().map((student: any) => {
+        const studentRow: (string | number | null)[] = [`${student.apellido1} ${student.apellido2}, ${student.nombre}`];
+        COURSE_MODULES.forEach(module => {
+            const grades: Partial<CourseModuleGrades> = localCourseGrades[student.id]?.[module] || {};
+            const validGrades = (Object.values(grades) as (GradeValue | undefined)[]).map(g => parseFloat(String(g))).filter(g => !isNaN(g));
+            const finalAvg = validGrades.length > 0 ? (validGrades.reduce((a, b) => a + b, 0) / validGrades.length) : null;
+            studentRow.push(grades.t1 ?? '-');
+            studentRow.push(grades.t2 ?? '-');
+            studentRow.push(grades.t3 ?? '-');
+            studentRow.push(grades.rec ?? '-');
+            studentRow.push(finalAvg !== null ? finalAvg.toFixed(2) : '-');
+        });
+        return studentRow;
+    });
+
+    (doc as any).autoTable({
+        head: [otrosHeadRow1, otrosHeadRow2],
+        body: otrosBody,
+        startY: 25,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.5, halign: 'center' },
+        headStyles: { fillColor: [22, 163, 74], textColor: 255, fontStyle: 'bold', halign: 'center', fontSize: 8 },
+        didDrawPage: (data: any) => addPageHeaderAndFooter(data, "Informe Académico - Otros Módulos"),
+    });
+
+    doc.save(`Informe_Academico_Completo_${new Date().toISOString().split('T')[0]}.pdf`);
+};
 
 const GestionAcademicaView: React.FC = () => {
     const { students, academicGrades, setAcademicGrades, courseGrades, setCourseGrades, calculatedStudentGrades, teacherData, instituteData, addToast } = useAppContext();
@@ -36,7 +155,6 @@ const GestionAcademicaView: React.FC = () => {
             ACADEMIC_EVALUATION_STRUCTURE.periods.forEach(period => {
                 let totalWeight = 0;
                 let weightedSum = 0;
-                // FIX: Correctly retrieve calculated grades to avoid type errors.
                 period.instruments.forEach(instrument => {
                     let grade: number | null = null;
                     if (instrument.type === 'manual') {
@@ -104,7 +222,14 @@ const GestionAcademicaView: React.FC = () => {
         addToast('Calificaciones guardadas con éxito.', 'success');
     };
 
-    const handleExport = () => { /* PDF Export logic */ };
+    const handleExport = () => {
+        try {
+            generateAcademicReportPDF(students, finalGradesAndAverages, localCourseGrades, calculatedStudentGrades, localAcademicGrades, teacherData, instituteData);
+        } catch (error) {
+            console.error("Error generating academic PDF:", error);
+            addToast("No se pudo generar el informe. Revisa los datos.", "error");
+        }
+    };
     
     return (
     <div>
@@ -117,6 +242,9 @@ const GestionAcademicaView: React.FC = () => {
                 <p className="text-gray-500 mt-1">Introduce y visualiza todas las calificaciones del curso.</p>
             </div>
             <div className="flex items-center space-x-2">
+                 <button onClick={handleExport} className="flex items-center bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition">
+                    <ExportIcon className="w-5 h-5 mr-1" /> Exportar a PDF
+                </button>
                  <button onClick={handleSaveChanges} disabled={!isDirty} className={`flex items-center px-4 py-2 rounded-lg font-semibold transition ${!isDirty ? 'bg-green-200 text-green-500 cursor-not-allowed' : 'bg-green-500 text-white hover:bg-green-600'}`}>
                     <SaveIcon className="w-5 h-5 mr-1" /> Guardar Cambios
                 </button>
@@ -157,16 +285,13 @@ const GestionAcademicaView: React.FC = () => {
                                             const studentAverage = finalGradesAndAverages.studentGrades[student.id].averages[period.key];
                                             return [
                                                 ...period.instruments.map(instrument => {
-                                                    // FIX: Correctly retrieve calculated grades to avoid type errors.
                                                     let calculatedGrade: number | null = null;
                                                     if (instrument.type === 'calculated') {
                                                         if (instrument.key === 'servicios') {
                                                             calculatedGrade = calculatedStudentGrades[student.id]?.serviceAverage ?? null;
                                                         } else {
                                                             const examKeyMap: Record<string, keyof StudentCalculatedGrades['practicalExams']> = {
-                                                                'exPracticoT1': 't1',
-                                                                'exPracticoT2': 't2',
-                                                                'exPracticoRec': 'rec',
+                                                                'exPracticoT1': 't1', 'exPracticoT2': 't2', 'exPracticoRec': 'rec',
                                                             };
                                                             const examKey = examKeyMap[instrument.key];
                                                             if (examKey) {
