@@ -4,16 +4,18 @@ import StudentList from '../components/StudentList';
 import StudentTable from '../components/StudentTable';
 import FileUpload from '../components/FileUpload';
 import FichaAlumno from './FichaAlumno'; 
+import AddStudentModal from '../components/AddStudentModal';
 import { ListIcon, GridIcon, SearchIcon, UserPlusIcon } from '../components/icons';
 import { useAppContext } from '../context/AppContext';
 
 const AlumnosView: React.FC = () => {
-  const { students, setStudents, entryExitRecords, calculatedStudentGrades, handleFileUpload: contextHandleFileUpload, addToast } = useAppContext();
+  const { students, setStudents, entryExitRecords, calculatedStudentGrades, academicGrades, courseGrades, handleFileUpload: contextHandleFileUpload, addToast } = useAppContext();
   
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   
   const handleFileUpload = async (file: File) => {
     setLoading(true);
@@ -48,6 +50,16 @@ const AlumnosView: React.FC = () => {
       }
       addToast('Foto del alumno actualizada.', 'success');
   };
+
+  const handleSaveNewStudent = (newStudentData: Omit<Student, 'id' | 'fotoUrl'>) => {
+    const newStudent: Student = {
+        ...newStudentData,
+        id: `${newStudentData.nre}-${Date.now()}`,
+        fotoUrl: `https://picsum.photos/seed/${newStudentData.nre || Date.now()}/200`,
+    };
+    setStudents(prev => [...prev, newStudent].sort((a,b) => a.apellido1.localeCompare(b.apellido1)));
+    addToast('Alumno añadido con éxito.', 'success');
+  };
   
   if (selectedStudent) {
       return <FichaAlumno 
@@ -55,6 +67,8 @@ const AlumnosView: React.FC = () => {
           onBack={handleBackToList}
           entryExitRecords={entryExitRecords.filter(r => r.studentId === selectedStudent.id)}
           calculatedGrades={calculatedStudentGrades[selectedStudent.id]}
+          academicGrades={academicGrades[selectedStudent.id]}
+          courseGrades={courseGrades[selectedStudent.id]}
           onUpdatePhoto={handleUpdatePhoto}
        />;
   }
@@ -81,7 +95,9 @@ const AlumnosView: React.FC = () => {
         </div>
         
         <div className="flex items-center space-x-2">
-           <button className="flex items-center bg-green-500 text-white px-3 py-2 rounded-lg font-semibold hover:bg-green-600 transition text-sm">
+           <button 
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center bg-green-500 text-white px-3 py-2 rounded-lg font-semibold hover:bg-green-600 transition text-sm">
             <UserPlusIcon className="w-5 h-5 mr-1" />
             Nuevo Alumno
           </button>
@@ -129,6 +145,11 @@ const AlumnosView: React.FC = () => {
           <StudentTable students={filteredStudents} onViewStudent={handleViewStudent} />
         )
       )}
+      <AddStudentModal 
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSave={handleSaveNewStudent}
+      />
     </div>
   );
 };

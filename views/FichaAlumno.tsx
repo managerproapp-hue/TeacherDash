@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Student, EntryExitRecord, StudentCalculatedGrades } from '../types';
+import { Student, EntryExitRecord, StudentCalculatedGrades, StudentAcademicGrades, StudentCourseGrades, GradeValue, CourseModuleGrades } from '../types';
+import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES } from '../data/constants';
 import { 
     PencilIcon,
     CameraIcon
@@ -10,6 +11,8 @@ interface FichaAlumnoProps {
   onBack: () => void;
   entryExitRecords: EntryExitRecord[];
   calculatedGrades: StudentCalculatedGrades;
+  academicGrades?: StudentAcademicGrades;
+  courseGrades?: StudentCourseGrades;
   onUpdatePhoto: (studentId: string, photoUrl: string) => void;
 }
 
@@ -34,7 +37,7 @@ const Tab: React.FC<{ label: string; isActive: boolean; onClick: () => void; }> 
 );
 
 
-const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRecords, calculatedGrades, onUpdatePhoto }) => {
+const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRecords, calculatedGrades, academicGrades, courseGrades, onUpdatePhoto }) => {
   const [activeTab, setActiveTab] = useState('general');
   const fullName = `${student.apellido1} ${student.apellido2}, ${student.nombre}`.trim();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,11 +69,40 @@ const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRec
   }, [entryExitRecords]);
 
 
-  const renderGrade = (grade: number | null) => {
-      if (grade === null || isNaN(grade)) return <span className="text-gray-500">-</span>;
+  const renderGrade = (grade: number | null | undefined) => {
+      if (grade === null || grade === undefined || isNaN(grade)) return <span className="text-gray-500">-</span>;
       const color = grade >= 5 ? 'text-green-600' : 'text-red-600';
       return <span className={`font-bold ${color}`}>{grade.toFixed(2)}</span>
   };
+  
+  const finalAverages = useMemo(() => {
+    const results: { [periodKey: string]: number | null } = {};
+    if (academicGrades) {
+        ACADEMIC_EVALUATION_STRUCTURE.periods.forEach(period => {
+            let totalWeight = 0;
+            let weightedSum = 0;
+            period.instruments.forEach(instrument => {
+                let grade: number | null = null;
+                if (instrument.type === 'manual') {
+                    const manualGrade = academicGrades[period.key]?.manualGrades?.[instrument.key];
+                    grade = (manualGrade === null || manualGrade === undefined) ? null : parseFloat(String(manualGrade));
+                } else {
+                    if (instrument.key === 'servicios') grade = calculatedGrades?.serviceAverage ?? null;
+                    else {
+                        const examKey = { 'exPracticoT1': 't1', 'exPracticoT2': 't2', 'exPracticoRec': 'rec' }[instrument.key] as 't1' | 't2' | 'rec';
+                        if (examKey) grade = calculatedGrades?.practicalExams[examKey] ?? null;
+                    }
+                }
+                if (grade !== null && !isNaN(grade)) {
+                    weightedSum += grade * instrument.weight;
+                    totalWeight += instrument.weight;
+                }
+            });
+            results[period.key] = totalWeight > 0 ? parseFloat((weightedSum / totalWeight).toFixed(2)) : null;
+        });
+    }
+    return results;
+  }, [academicGrades, calculatedGrades]);
 
   return (
     <div>
@@ -83,13 +115,7 @@ const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRec
                             <CameraIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                     </div>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        className="hidden"
-                        accept="image/*"
-                    />
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
                     <div>
                         <h1 className="text-3xl font-bold text-gray-800">{fullName}</h1>
                         <p className="text-gray-500">{student.grupo} | {student.emailOficial}</p>
@@ -97,68 +123,109 @@ const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRec
                 </div>
             </div>
             <div className="flex items-center space-x-2">
-                <button className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                    <PencilIcon className="w-4 h-4 mr-2" />
-                    Editar Ficha
-                </button>
-                <button onClick={onBack} className="text-gray-600 hover:text-gray-800 font-medium text-2xl leading-none p-1 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100">
-                    &times;
-                </button>
+                <button className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition"><PencilIcon className="w-4 h-4 mr-2" />Editar Ficha</button>
+                <button onClick={onBack} className="text-gray-600 hover:text-gray-800 font-medium text-2xl leading-none p-1 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100">&times;</button>
             </div>
         </header>
         
         <div className="border-b border-gray-200 mb-6">
             <nav className="flex space-x-2">
                 <Tab label="Información General" isActive={activeTab === 'general'} onClick={() => setActiveTab('general')} />
-                <Tab label="Resumen de Evaluaciones" isActive={activeTab === 'evaluaciones'} onClick={() => setActiveTab('evaluaciones')} />
+                <Tab label="Calificaciones" isActive={activeTab === 'calificaciones'} onClick={() => setActiveTab('calificaciones')} />
             </nav>
         </div>
 
         {activeTab === 'general' && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                <div className="xl:col-span-2 bg-white shadow-md rounded-lg overflow-hidden">
-                   <div className="p-4 border-b">
-                       <h3 className="text-lg font-bold text-gray-800">Datos Personales</h3>
-                   </div>
+                   <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">Datos Personales</h3></div>
                    <dl className="divide-y divide-gray-200">
-                       <InfoRow label="NRE" value={student.nre} />
-                       <InfoRow label="Nº Expediente" value={student.expediente} />
-                       <InfoRow label="Fecha de Nacimiento" value={student.fechaNacimiento} />
-                       <InfoRow label="Teléfono" value={student.telefono} />
-                       <InfoRow label="Email Personal" value={student.emailPersonal} />
+                       <InfoRow label="NRE" value={student.nre} /><InfoRow label="Nº Expediente" value={student.expediente} /><InfoRow label="Fecha de Nacimiento" value={student.fechaNacimiento} /><InfoRow label="Teléfono" value={student.telefono} /><InfoRow label="Email Personal" value={student.emailPersonal} />
                    </dl>
                </div>
                <div className="space-y-6">
                    <div className="bg-white shadow-md rounded-lg p-4">
                        <h3 className="text-md font-bold text-gray-800 mb-2 text-orange-600">Registro de Salidas y Entradas</h3>
-                       {sortedEntryExitRecords.length > 0 ? (
-                            <div className="max-h-48 overflow-y-auto pr-2 space-y-2 text-sm">
-                               {sortedEntryExitRecords.map(record => (
-                                   <div key={record.id} className="p-2 bg-gray-50 rounded-md">
-                                       <p className="font-semibold">{record.date} - <span className={record.type === 'Salida Anticipada' ? 'text-red-600' : 'text-blue-600'}>{record.type}</span></p>
-                                       <p className="text-gray-600 break-words">{record.reason}</p>
-                                   </div>
-                               ))}
-                           </div>
-                       ) : (
-                           <p className="text-sm text-gray-500">No hay registros.</p>
-                       )}
+                       {sortedEntryExitRecords.length > 0 ? (<div className="max-h-48 overflow-y-auto pr-2 space-y-2 text-sm">{sortedEntryExitRecords.map(record => (<div key={record.id} className="p-2 bg-gray-50 rounded-md"><p className="font-semibold">{record.date} - <span className={record.type === 'Salida Anticipada' ? 'text-red-600' : 'text-blue-600'}>{record.type}</span></p><p className="text-gray-600 break-words">{record.reason}</p></div>))}</div>) : (<p className="text-sm text-gray-500">No hay registros.</p>)}
                    </div>
                </div>
             </div>
         )}
 
-        {activeTab === 'evaluaciones' && (
-            <div className="bg-white shadow-md rounded-lg overflow-hidden">
-                <div className="p-4 border-b">
-                    <h3 className="text-lg font-bold text-gray-800">Rendimiento en el Módulo</h3>
+        {activeTab === 'calificaciones' && (
+            <div className="space-y-8">
+                <div className="bg-white shadow-md rounded-lg overflow-hidden">
+                    <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">Resumen Final del Módulo Principal</h3></div>
+                     <dl className="divide-y divide-gray-200">
+                        <InfoRow label="Media de Servicios Prácticos" value={renderGrade(calculatedGrades?.serviceAverage)} />
+                        <InfoRow label="Media Ex. Práctico (T1)" value={renderGrade(calculatedGrades?.practicalExams.t1)} />
+                        <InfoRow label="Media Ex. Práctico (T2)" value={renderGrade(calculatedGrades?.practicalExams.t2)} />
+                        <InfoRow label="Media Ex. Práctico (REC)" value={renderGrade(calculatedGrades?.practicalExams.rec)} />
+                    </dl>
                 </div>
-                 <dl className="divide-y divide-gray-200">
-                    <InfoRow label="Media de Servicios Prácticos" value={renderGrade(calculatedGrades?.serviceAverage)} />
-                    <InfoRow label="Examen Práctico T1" value={renderGrade(calculatedGrades?.practicalExams.t1)} />
-                    <InfoRow label="Examen Práctico T2" value={renderGrade(calculatedGrades?.practicalExams.t2)} />
-                    <InfoRow label="Examen Práctico REC" value={renderGrade(calculatedGrades?.practicalExams.rec)} />
-                </dl>
+
+                <div className="bg-white shadow-md rounded-lg overflow-hidden">
+                    <h3 className="text-lg font-bold text-gray-800 p-4 border-b">Desglose de Calificaciones (Módulo Principal)</h3>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm text-center">
+                            <thead className="bg-gray-50 text-xs text-gray-600 uppercase">
+                                <tr>
+                                    <th className="px-4 py-3 text-left">Instrumento</th>
+                                    {ACADEMIC_EVALUATION_STRUCTURE.periods.map(p => <th key={p.key} className="px-4 py-3">{p.name}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {ACADEMIC_EVALUATION_STRUCTURE.periods[0].instruments.map(instrument => (
+                                    <tr key={instrument.key}>
+                                        <td className="px-4 py-2 text-left font-medium">{instrument.name} ({instrument.weight * 100}%)</td>
+                                        {ACADEMIC_EVALUATION_STRUCTURE.periods.map(period => {
+                                            let grade: GradeValue | undefined = null;
+                                            if (period.instruments.some(i => i.key === instrument.key)) {
+                                                if (instrument.type === 'manual') grade = academicGrades?.[period.key]?.manualGrades?.[instrument.key];
+                                                else {
+                                                    if (instrument.key === 'servicios') grade = calculatedGrades?.serviceAverage;
+                                                    else {
+                                                         const examKey = { 'exPracticoT1': 't1', 'exPracticoT2': 't2', 'exPracticoRec': 'rec' }[instrument.key] as 't1' | 't2' | 'rec';
+                                                         if(examKey) grade = calculatedGrades?.practicalExams[examKey];
+                                                    }
+                                                }
+                                            }
+                                            return <td key={`${period.key}-${instrument.key}`} className="px-4 py-2">{renderGrade(grade as number)}</td>;
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                             <tfoot className="bg-gray-100 font-bold">
+                                <tr>
+                                    <td className="px-4 py-2 text-left">MEDIA PONDERADA</td>
+                                    {ACADEMIC_EVALUATION_STRUCTURE.periods.map(p => <td key={p.key} className="px-4 py-2">{renderGrade(finalAverages[p.key])}</td>)}
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                 <div className="bg-white shadow-md rounded-lg overflow-hidden">
+                    <h3 className="text-lg font-bold text-gray-800 p-4 border-b">Calificaciones de Otros Módulos</h3>
+                     <div className="overflow-x-auto">
+                           <table className="min-w-full text-sm text-center">
+                                <thead className="bg-gray-50 text-xs text-gray-600 uppercase">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left">Módulo</th><th className="px-4 py-3">T1</th><th className="px-4 py-3">T2</th><th className="px-4 py-3">T3</th><th className="px-4 py-3">REC</th><th className="px-4 py-3">Media Final</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {COURSE_MODULES.map(mod => {
+                                        const grades = courseGrades?.[mod] || {};
+                                        const validGrades = (Object.values(grades) as (GradeValue | undefined)[]).map(g => parseFloat(String(g))).filter(g => !isNaN(g));
+                                        const finalAvg = validGrades.length > 0 ? (validGrades.reduce((a, b) => a + b, 0) / validGrades.length) : null;
+                                        return (
+                                            <tr key={mod}><td className="px-4 py-2 text-left font-medium">{mod}</td><td>{renderGrade(grades.t1)}</td><td>{renderGrade(grades.t2)}</td><td>{renderGrade(grades.t3)}</td><td>{renderGrade(grades.rec)}</td><td className="font-bold bg-gray-50">{renderGrade(finalAvg)}</td></tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                </div>
             </div>
         )}
     </div>
