@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { Service, ServiceEvaluation, Elaboration, Student, PracticeGroup, ServiceRole, TeacherData, InstituteData } from '../types';
-import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon, PrinterIcon, LockClosedIcon, LockOpenIcon, UsersIcon, ClipboardListIcon } from '../components/icons';
+import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon, PrinterIcon, LockClosedIcon, LockOpenIcon, UsersIcon } from '../components/icons';
 import { PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_RATING_MAP, GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS } from '../data/constants';
 import { useAppContext } from '../context/AppContext';
 
@@ -117,7 +117,7 @@ const generatePlanningPDF = (
             const group = practiceGroups.find(g => g.id === groupId);
             if (!group) return;
             
-            const elaborations = (elaborationsList || []).filter(e => e.responsibleGroupId === groupId);
+            const elaborations = elaborationsList.filter(e => e.responsibleGroupId === groupId);
             const studentsInGroup = allStudents.filter(s => group.studentIds.includes(s.id))
                 .sort((a,b) => a.apellido1.localeCompare(b.apellido1));
                 
@@ -310,6 +310,7 @@ const generateServiceReportPDF = (
     doc.save(`Informe_Servicio_${service.name.replace(/ /g, '_')}.pdf`);
 };
 
+// --- NEW DETAILED STUDENT REPORT PDF ---
 const generateDetailedStudentReportsPDF = (
     service: Service,
     evaluation: ServiceEvaluation,
@@ -373,17 +374,14 @@ const generateDetailedStudentReportsPDF = (
             doc.addPage();
         }
         
-        let y = 0; // Reset y for each student's section of tables
-        const autoTableOptions = {
-            didDrawPage: addPageHeaderAndFooter,
-            margin: { top: 35, bottom: 20 }
-        };
+        addPageHeaderAndFooter({ pageNumber: doc.internal.getCurrentPageInfo().pageNumber });
 
+        let y = 35; 
+        
         // --- STUDENT INFO ---
         const studentGroup = practiceGroups.find(g => g.studentIds.includes(student.id));
         const studentRole = serviceRoles.find(r => r.id === service.studentRoles.find(sr => sr.studentId === student.id)?.roleId);
         
-        y = 35; 
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
         doc.text(`${student.apellido1} ${student.apellido2}, ${student.nombre}`, pageMargin, y);
@@ -399,24 +397,36 @@ const generateDetailedStudentReportsPDF = (
         Object.entries(evaluation.preService).sort(([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime()).forEach(([date, preServiceDay]) => {
             const preEval = preServiceDay.individualEvaluations[student.id];
             if (preEval) {
-                doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.setFont('helvetica', 'bold');
                 doc.text(`Día Previo: ${preServiceDay.name || date}`, pageMargin, y);
                 y += 6;
                 
-                const basicsBody = [['Asistencia', preEval.attendance ? 'Presente' : 'Ausente'], ['Fichas Técnicas', preEval.hasFichas ? 'Sí' : 'No'], ['Uniforme Completo', preEval.hasUniforme ? 'Sí' : 'No'], ['Material Necesario', preEval.hasMaterial ? 'Sí' : 'No']];
-                (doc as any).autoTable({ ...autoTableOptions, startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } } });
+                const basicsBody = [
+                    ['Asistencia', preEval.attendance ? 'Presente' : 'Ausente'],
+                    ['Fichas Técnicas', preEval.hasFichas ? 'Sí' : 'No'],
+                    ['Uniforme Completo', preEval.hasUniforme ? 'Sí' : 'No'],
+                    ['Material Necesario', preEval.hasMaterial ? 'Sí' : 'No'],
+                ];
+
+                (doc as any).autoTable({ startY: y, body: basicsBody, theme: 'grid', columnStyles: { 0: { fontStyle: 'bold' } }, didDrawPage: addPageHeaderAndFooter });
                 y = (doc as any).lastAutoTable.finalY + 5;
                 
-                const behaviorBody: any[][] = PRE_SERVICE_BEHAVIOR_ITEMS.map(item => [item.label, BEHAVIOR_RATING_MAP.find(r => r.value === preEval.behaviorScores[item.id])?.symbol || '-']);
-                (doc as any).autoTable({ ...autoTableOptions, startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] } });
+                const behaviorBody = PRE_SERVICE_BEHAVIOR_ITEMS.map(item => [item.label, BEHAVIOR_RATING_MAP.find(r => r.value === preEval.behaviorScores[item.id])?.symbol || '-']);
+                
+                (doc as any).autoTable({ startY: y, head: [['Comportamiento y Actitud', 'Valoración']], body: behaviorBody, theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, didDrawPage: addPageHeaderAndFooter });
                 y = (doc as any).lastAutoTable.finalY;
 
                 if (preEval.observations) {
-                    y += 5; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+                    y += 5;
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
                     doc.text('Observaciones del día previo:', pageMargin, y);
-                    y += 4; doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
+                    y += 4;
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(80);
                     doc.text(preEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y += 10;
+                    y = doc.autoTable.previous.finalY + 10;
                 }
                  y += 5;
             }
@@ -425,27 +435,34 @@ const generateDetailedStudentReportsPDF = (
         // --- SERVICE DAY EVALUATION ---
         const serviceDayEval = evaluation.serviceDay.individualScores[student.id];
         if (serviceDayEval) {
-            doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
             doc.text('Evaluación Individual (Día de Servicio)', pageMargin, y);
             y += 6;
 
             if (!serviceDayEval.attendance) {
-                 doc.setFontSize(11); doc.setTextColor(220, 53, 69); // Red
+                 doc.setFontSize(11);
+                 doc.setTextColor(220, 53, 69); // Red
                  doc.text('ALUMNO AUSENTE EN EL SERVICIO', pageMargin, y);
                  y += 10;
             } else {
                 const individualBody: any[][] = INDIVIDUAL_EVALUATION_ITEMS.map((item, index) => [item.label, `${(serviceDayEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
                 const totalScore = serviceDayEval.scores.reduce((sum, score) => sum + (score || 0), 0);
                 individualBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
-                (doc as any).autoTable({ ...autoTableOptions, startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] } });
+                
+                (doc as any).autoTable({ startY: y, head: [['Criterio Individual', 'Puntuación']], body: individualBody, theme: 'striped', headStyles: { fillColor: [147, 51, 234] }, didDrawPage: addPageHeaderAndFooter });
                 y = (doc as any).lastAutoTable.finalY;
 
                 if (serviceDayEval.observations) {
-                    y += 5; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+                    y += 5;
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
                     doc.text('Observaciones del día de servicio:', pageMargin, y);
-                    y += 4; doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
+                    y += 4;
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(80);
                     doc.text(serviceDayEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y += 10;
+                    y = doc.autoTable.previous.finalY + 10;
                 }
             }
         }
@@ -454,28 +471,39 @@ const generateDetailedStudentReportsPDF = (
         // --- GROUP EVALUATION ---
         const groupEval = studentGroup ? evaluation.serviceDay.groupScores[studentGroup.id] : null;
         if (groupEval) {
-            doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
             doc.text(`Evaluación Grupal (${studentGroup?.name})`, pageMargin, y);
             y += 6;
 
             const groupElaborations = [...service.elaborations.comedor, ...service.elaborations.takeaway].filter(e => e.responsibleGroupId === studentGroup?.id);
             if (groupElaborations.length > 0) {
-                 doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+                 doc.setFontSize(10);
+                 doc.setFont('helvetica', 'bold');
                  doc.text('Elaboraciones del grupo:', pageMargin, y);
-                 y += 4; doc.setFont('helvetica', 'normal');
-                 groupElaborations.forEach(elab => { doc.text(`- ${elab.name}`, pageMargin + 2, y); y += 5; });
+                 y += 4;
+                 doc.setFont('helvetica', 'normal');
+                 groupElaborations.forEach(elab => {
+                    doc.text(`- ${elab.name}`, pageMargin + 2, y);
+                    y += 5;
+                 });
             }
 
             const groupBody: any[][] = GROUP_EVALUATION_ITEMS.map((item, index) => [item.label, `${(groupEval.scores[index] || 0).toFixed(2)} / ${item.maxScore.toFixed(2)}`]);
             const totalGroupScore = groupEval.scores.reduce((sum, score) => sum + (score || 0), 0);
             groupBody.push([{ content: 'TOTAL', styles: { fontStyle: 'bold' } }, { content: `${totalGroupScore.toFixed(2)} / 10.00`, styles: { fontStyle: 'bold' } }]);
-            (doc as any).autoTable({ ...autoTableOptions, startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] } });
+
+            (doc as any).autoTable({ startY: y, head: [['Criterio Grupal', 'Puntuación']], body: groupBody, theme: 'striped', headStyles: { fillColor: [37, 99, 235] }, didDrawPage: addPageHeaderAndFooter });
             y = (doc as any).lastAutoTable.finalY;
 
             if (groupEval.observations) {
-                y += 5; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+                y += 5;
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
                 doc.text('Observaciones del grupo:', pageMargin, y);
-                y += 4; doc.setFont('helvetica', 'normal'); doc.setTextColor(80);
+                y += 4;
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(80);
                 doc.text(groupEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
             }
         }
@@ -483,99 +511,6 @@ const generateDetailedStudentReportsPDF = (
     
     doc.save(`Informe_Detallado_${service.name.replace(/ /g, '_')}.pdf`);
 }
-
-
-const generateSeguimientoPDF = (
-    service: Service,
-    allStudents: Student[],
-    practiceGroups: PracticeGroup[],
-    serviceRoles: ServiceRole[],
-    teacherData: TeacherData,
-    instituteData: InstituteData
-) => {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageMargin = 15;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    const addImageToPdf = (imageData: string | null, x: number, y: number, w: number, h: number) => {
-        if (imageData && imageData.startsWith('data:image')) {
-            try {
-                const imageType = imageData.substring(imageData.indexOf('/') + 1, imageData.indexOf(';'));
-                doc.addImage(imageData, imageType.toUpperCase(), x, y, w, h);
-            } catch (e) { console.error("Error adding image:", e); }
-        }
-    };
-    
-    const addPageHeaderAndFooter = (pageNumber: number) => {
-        doc.setFont('helvetica', 'normal');
-        addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
-        addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
-        doc.setFontSize(12);
-        doc.setTextColor(80);
-        doc.text(`Ficha de Seguimiento de Servicio: ${service.name}`, pageWidth / 2, 15, { align: 'center' });
-        doc.setDrawColor(200);
-        doc.line(pageMargin, 28, pageWidth - pageMargin, 28);
-        doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
-        doc.setFontSize(8);
-        doc.setTextColor(120);
-        doc.text(`Página ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-    };
-
-    const participatingGroups = practiceGroups.filter(g => new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]).has(g.id));
-
-    participatingGroups.forEach((group, index) => {
-        if (index > 0) doc.addPage();
-        const pageNumber = doc.internal.getCurrentPageInfo().pageNumber;
-        addPageHeaderAndFooter(pageNumber);
-        let y = 35;
-
-        doc.setFontSize(16);
-        doc.text(`Grupo: ${group.name}`, pageWidth / 2, y, { align: 'center' });
-        y += 10;
-        
-        const members = allStudents.filter(s => group.studentIds.includes(s.id)).sort((a, b) => a.apellido1.localeCompare(b.apellido1));
-        const membersBody = members.map(student => {
-            const role = serviceRoles.find(r => r.id === service.studentRoles.find(sr => sr.studentId === student.id)?.roleId);
-            return [`${student.apellido1} ${student.apellido2}, ${student.nombre}`, role?.name || 'Sin Asignar'];
-        });
-
-        (doc as any).autoTable({
-            startY: y,
-            head: [['Miembros del Grupo', 'Puesto Asignado']],
-            body: membersBody,
-            theme: 'grid',
-            headStyles: { fillColor: [79, 70, 229] },
-            didDrawPage: (data: any) => addPageHeaderAndFooter(data.pageNumber)
-        });
-        y = (doc as any).lastAutoTable.finalY + 10;
-
-        const groupObservationsBody = GROUP_EVALUATION_ITEMS.map(item => [item.label, '']);
-        (doc as any).autoTable({
-            startY: y,
-            head: [['Observaciones Grupales', 'Anotaciones']],
-            body: groupObservationsBody,
-            theme: 'grid',
-            headStyles: { fillColor: [37, 99, 235] },
-            columnStyles: { 1: { cellWidth: 100 } },
-            didDrawPage: (data: any) => addPageHeaderAndFooter(data.pageNumber)
-        });
-        y = (doc as any).lastAutoTable.finalY + 10;
-        
-        const individualObservationsBody = members.map(student => [`${student.apellido1}, ${student.nombre.charAt(0)}.`, '']);
-         (doc as any).autoTable({
-            startY: y,
-            head: [['Observaciones Individuales', 'Anotaciones']],
-            body: individualObservationsBody,
-            theme: 'grid',
-            headStyles: { fillColor: [147, 51, 234] },
-            columnStyles: { 1: { cellWidth: 100 } },
-            didDrawPage: (data: any) => addPageHeaderAndFooter(data.pageNumber)
-        });
-    });
-
-    doc.save(`Ficha_Seguimiento_${service.name.replace(/ /g, '_')}.pdf`);
-};
 
 
 const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({ 
@@ -656,47 +591,16 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         }
     };
     
-    const sanitizeServiceForPDF = (service: Service): Service => {
-        return {
-            ...service,
-            assignedGroups: {
-                comedor: [],
-                takeaway: [],
-                ...(service.assignedGroups || {}),
-            },
-            elaborations: {
-                comedor: [],
-                takeaway: [],
-                ...(service.elaborations || {}),
-            },
-        };
-    };
-
     const handleGeneratePlanningPdf = () => {
         if (!editedService) {
             addToast('No hay un servicio seleccionado para generar el planning.', 'error');
             return;
         }
         try {
-            const serviceForPDF = sanitizeServiceForPDF(editedService);
-            generatePlanningPDF(serviceForPDF, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            generatePlanningPDF(editedService, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF del planning:", error);
             addToast('Error al generar el planning. Revisa que todos los datos del servicio estén correctos.', 'error');
-        }
-    };
-    
-     const handleGenerateSeguimientoPdf = () => {
-        if (!editedService) {
-            addToast('Selecciona un servicio para generar la ficha.', 'error');
-            return;
-        }
-        try {
-            const serviceForPDF = sanitizeServiceForPDF(editedService);
-            generateSeguimientoPDF(serviceForPDF, students, practiceGroups, serviceRoles, teacherData, instituteData);
-        } catch (error) {
-            console.error("Fallo al generar la Ficha de Seguimiento:", error);
-            addToast('Error al generar la ficha. Revisa los datos del servicio.', 'error');
         }
     };
     
@@ -706,8 +610,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            const serviceForPDF = sanitizeServiceForPDF(editedService);
-            generateServiceReportPDF(serviceForPDF, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            generateServiceReportPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF del informe:", error);
             addToast('Error al generar el informe. Revisa que todos los datos de evaluación estén completos.', 'error');
@@ -720,8 +623,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             return;
         }
         try {
-            const serviceForPDF = sanitizeServiceForPDF(editedService);
-            generateDetailedStudentReportsPDF(serviceForPDF, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            generateDetailedStudentReportsPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF de informes de alumnos:", error);
             addToast('Error al generar los informes individuales. Revisa los datos.', 'error');
@@ -750,7 +652,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         }
         const newElab: Elaboration = { id: `elab-${Date.now()}`, name, responsibleGroupId };
         if (editedService) {
-            const updatedElaborations = { ...editedService.elaborations, [area]: [...(editedService.elaborations?.[area] || []), newElab] };
+            const updatedElaborations = { ...editedService.elaborations, [area]: [...editedService.elaborations[area], newElab] };
             setEditedService({ ...editedService, elaborations: updatedElaborations });
             setNewElaboration(prev => ({ ...prev, [area]: { name: '', responsibleGroupId: '' } }));
         }
@@ -835,10 +737,9 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                         </div>
                     </div>
                     <div className="flex items-center space-x-2 flex-wrap gap-2">
-                        <button onClick={handleGenerateSeguimientoPdf} className="flex items-center bg-teal-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-teal-600 transition"><ClipboardListIcon className="w-5 h-5 mr-1" /> Ficha Seguimiento</button>
+                        <button onClick={handleGenerateStudentReports} className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition"><UsersIcon className="w-5 h-5 mr-1" /> Informe por Alumno</button>
+                        {isLocked && <button onClick={handleGenerateReport} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Informe de Servicio</button>}
                         <button onClick={handleGeneratePlanningPdf} className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"><PrinterIcon className="w-5 h-5 mr-1" /> Planning</button>
-                        <button onClick={handleGenerateStudentReports} className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition"><UsersIcon className="w-5 h-5 mr-1" /> Informe Alumno</button>
-                        {isLocked && <button onClick={handleGenerateReport} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Informe Servicio</button>}
                         {!isLocked && <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition"><SaveIcon className="w-5 h-5 mr-1" /> Guardar</button>}
                         {!isLocked && <button onClick={handleDelete} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition"><TrashIcon className="w-5 h-5" /></button>}
                     </div>
@@ -880,7 +781,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                                         <div className="space-y-2">{practiceGroups.map(group => (<label key={group.id} className="flex items-center p-3 rounded-md hover:bg-gray-50 cursor-pointer"><input type="checkbox" checked={assignedGroupIds.includes(group.id)} onChange={() => toggleGroupAssignment(area, group.id)} disabled={isLocked} className={`h-4 w-4 rounded border-gray-300 text-${areaColor}-600 focus:ring-${areaColor}-500`}/> <span className="ml-3 text-sm font-medium text-gray-800">{group.name}</span></label>))}</div>
                                         <div className="mt-6 border-t pt-4">
                                             <h4 className={`text-lg font-bold mb-3 text-${areaColor}-600`}>Elaboraciones para {area}</h4>
-                                            <div className="space-y-3 mb-4">{(editedService.elaborations?.[area] || []).map((elab, index) => (<div key={elab.id} className="flex items-center gap-2 text-sm"><span className="font-semibold text-gray-500">{index + 1}.</span><input type="text" value={elab.name} onChange={e => handleUpdateElaboration(area, elab.id, 'name', e.target.value)} disabled={isLocked} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"/><select value={elab.responsibleGroupId || ''} onChange={e => handleUpdateElaboration(area, elab.id, 'responsibleGroupId', e.target.value)} disabled={isLocked} className="p-1.5 border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"><option value="">Asignar...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleDeleteElaboration(area, elab.id)} disabled={isLocked} className="p-1 text-gray-400 hover:text-red-500 disabled:cursor-not-allowed"><TrashIcon className="w-4 h-4" /></button></div>))}</div>
+                                            <div className="space-y-3 mb-4">{editedService.elaborations[area].map((elab, index) => (<div key={elab.id} className="flex items-center gap-2 text-sm"><span className="font-semibold text-gray-500">{index + 1}.</span><input type="text" value={elab.name} onChange={e => handleUpdateElaboration(area, elab.id, 'name', e.target.value)} disabled={isLocked} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"/><select value={elab.responsibleGroupId || ''} onChange={e => handleUpdateElaboration(area, elab.id, 'responsibleGroupId', e.target.value)} disabled={isLocked} className="p-1.5 border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"><option value="">Asignar...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleDeleteElaboration(area, elab.id)} disabled={isLocked} className="p-1 text-gray-400 hover:text-red-500 disabled:cursor-not-allowed"><TrashIcon className="w-4 h-4" /></button></div>))}</div>
                                             {!isLocked && (availableGroupsForElaboration.length > 0 ? (<div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md"><input type="text" placeholder="Nombre del nuevo plato" value={newElaboration[area].name} onChange={e => setNewElaboration(p => ({...p, [area]: {...p[area], name: e.target.value}}))} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm"/><select value={newElaboration[area].responsibleGroupId} onChange={e => setNewElaboration(p => ({...p, [area]: {...p[area], responsibleGroupId: e.target.value}}))} className="p-1.5 border-gray-300 rounded-md shadow-sm"><option value="">Seleccionar grupo...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleAddElaboration(area)} className={`bg-${areaColor}-500 text-white px-3 py-1.5 rounded-md font-semibold hover:bg-${areaColor}-600`}>Añadir</button></div>) : (<p className="text-sm text-gray-500 text-center p-2 bg-gray-50 rounded-md">Asigna al menos un grupo a esta área para poder añadir elaboraciones.</p>))}
                                         </div>
                                     </div>
