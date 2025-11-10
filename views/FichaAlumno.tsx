@@ -1,9 +1,10 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student, EntryExitRecord, StudentCalculatedGrades, StudentAcademicGrades, StudentCourseGrades, GradeValue, CourseModuleGrades } from '../types';
 import { ACADEMIC_EVALUATION_STRUCTURE, COURSE_MODULES } from '../data/constants';
 import { 
     PencilIcon,
-    CameraIcon
+    CameraIcon,
+    SaveIcon
 } from '../components/icons';
 
 interface FichaAlumnoProps {
@@ -14,12 +15,27 @@ interface FichaAlumnoProps {
   academicGrades?: StudentAcademicGrades;
   courseGrades?: StudentCourseGrades;
   onUpdatePhoto: (studentId: string, photoUrl: string) => void;
+  onUpdateStudent: (student: Student) => void;
 }
 
 const InfoRow: React.FC<{ label: string; value: React.ReactNode; }> = ({ label, value }) => (
     <div className="grid grid-cols-3 gap-4 px-4 py-3 hover:bg-gray-50">
         <dt className="text-sm font-medium text-gray-500">{label}</dt>
         <dd className="mt-1 text-sm text-gray-900 sm:mt-0 col-span-2">{value || '-'}</dd>
+    </div>
+);
+
+const EditField: React.FC<{ label: string; name: keyof Student; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; type?: string; }> = ({ label, name, value, onChange, type = 'text' }) => (
+    <div>
+        <label htmlFor={name} className="block text-sm font-medium text-gray-700">{label}</label>
+        <input
+            type={type}
+            id={name}
+            name={name}
+            value={value}
+            onChange={onChange}
+            className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+        />
     </div>
 );
 
@@ -37,10 +53,17 @@ const Tab: React.FC<{ label: string; isActive: boolean; onClick: () => void; }> 
 );
 
 
-const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRecords, calculatedGrades, academicGrades, courseGrades, onUpdatePhoto }) => {
+const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRecords, calculatedGrades, academicGrades, courseGrades, onUpdatePhoto, onUpdateStudent }) => {
   const [activeTab, setActiveTab] = useState('general');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedStudent, setEditedStudent] = useState<Student>(student);
+
   const fullName = `${student.apellido1} ${student.apellido2}, ${student.nombre}`.trim();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setEditedStudent(student);
+  }, [student]);
 
   const handlePhotoClick = () => {
     fileInputRef.current?.click();
@@ -58,6 +81,21 @@ const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRec
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setEditedStudent(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSave = () => {
+    onUpdateStudent(editedStudent);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditedStudent(student);
+    setIsEditing(false);
   };
 
   const sortedEntryExitRecords = useMemo(() => {
@@ -123,7 +161,22 @@ const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRec
                 </div>
             </div>
             <div className="flex items-center space-x-2">
-                <button className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition"><PencilIcon className="w-4 h-4 mr-2" />Editar Ficha</button>
+                {isEditing ? (
+                    <>
+                        <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition">
+                            <SaveIcon className="w-4 h-4 mr-2" />
+                            Guardar
+                        </button>
+                        <button onClick={handleCancel} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-semibold">
+                            Cancelar
+                        </button>
+                    </>
+                ) : (
+                    <button onClick={() => setIsEditing(true)} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                        <PencilIcon className="w-4 h-4 mr-2" />
+                        Editar Ficha
+                    </button>
+                )}
                 <button onClick={onBack} className="text-gray-600 hover:text-gray-800 font-medium text-2xl leading-none p-1 w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100">&times;</button>
             </div>
         </header>
@@ -139,9 +192,25 @@ const FichaAlumno: React.FC<FichaAlumnoProps> = ({ student, onBack, entryExitRec
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                <div className="xl:col-span-2 bg-white shadow-md rounded-lg overflow-hidden">
                    <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">Datos Personales</h3></div>
-                   <dl className="divide-y divide-gray-200">
-                       <InfoRow label="NRE" value={student.nre} /><InfoRow label="Nº Expediente" value={student.expediente} /><InfoRow label="Fecha de Nacimiento" value={student.fechaNacimiento} /><InfoRow label="Teléfono" value={student.telefono} /><InfoRow label="Email Personal" value={student.emailPersonal} />
-                   </dl>
+                   {isEditing ? (
+                       <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                           <EditField label="Nombre" name="nombre" value={editedStudent.nombre} onChange={handleInputChange} />
+                           <EditField label="Primer Apellido" name="apellido1" value={editedStudent.apellido1} onChange={handleInputChange} />
+                           <EditField label="Segundo Apellido" name="apellido2" value={editedStudent.apellido2} onChange={handleInputChange} />
+                           <EditField label="NRE" name="nre" value={editedStudent.nre} onChange={handleInputChange} />
+                           <EditField label="Nº Expediente" name="expediente" value={editedStudent.expediente} onChange={handleInputChange} />
+                           <EditField label="Fecha de Nacimiento" name="fechaNacimiento" value={editedStudent.fechaNacimiento} onChange={handleInputChange} type="date" />
+                           <EditField label="Grupo" name="grupo" value={editedStudent.grupo} onChange={handleInputChange} />
+                           <EditField label="Subgrupo" name="subgrupo" value={editedStudent.subgrupo} onChange={handleInputChange} />
+                           <EditField label="Teléfono" name="telefono" value={editedStudent.telefono} onChange={handleInputChange} />
+                           <EditField label="Email Personal" name="emailPersonal" value={editedStudent.emailPersonal} onChange={handleInputChange} type="email" />
+                           <EditField label="Email Oficial" name="emailOficial" value={editedStudent.emailOficial} onChange={handleInputChange} type="email" />
+                       </div>
+                   ) : (
+                        <dl className="divide-y divide-gray-200">
+                           <InfoRow label="NRE" value={student.nre} /><InfoRow label="Nº Expediente" value={student.expediente} /><InfoRow label="Fecha de Nacimiento" value={student.fechaNacimiento} /><InfoRow label="Teléfono" value={student.telefono} /><InfoRow label="Email Personal" value={student.emailPersonal} />
+                        </dl>
+                   )}
                </div>
                <div className="space-y-6">
                    <div className="bg-white shadow-md rounded-lg p-4">

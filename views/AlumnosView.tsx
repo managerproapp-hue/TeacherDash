@@ -9,7 +9,7 @@ import { ListIcon, GridIcon, SearchIcon, UserPlusIcon } from '../components/icon
 import { useAppContext } from '../context/AppContext';
 
 const AlumnosView: React.FC = () => {
-  const { students, setStudents, entryExitRecords, calculatedStudentGrades, academicGrades, courseGrades, handleFileUpload: contextHandleFileUpload, addToast } = useAppContext();
+  const { students, setStudents, entryExitRecords, calculatedStudentGrades, academicGrades, courseGrades, handleFileUpload: contextHandleFileUpload, addToast, handleUpdateStudent } = useAppContext();
   
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,6 +60,11 @@ const AlumnosView: React.FC = () => {
     setStudents(prev => [...prev, newStudent].sort((a,b) => a.apellido1.localeCompare(b.apellido1)));
     addToast('Alumno añadido con éxito.', 'success');
   };
+
+  const handleSaveStudent = (updatedStudent: Student) => {
+    handleUpdateStudent(updatedStudent);
+    setSelectedStudent(updatedStudent);
+  };
   
   if (selectedStudent) {
       return <FichaAlumno 
@@ -70,6 +75,7 @@ const AlumnosView: React.FC = () => {
           academicGrades={academicGrades[selectedStudent.id]}
           courseGrades={courseGrades[selectedStudent.id]}
           onUpdatePhoto={handleUpdatePhoto}
+          onUpdateStudent={handleSaveStudent}
        />;
   }
 

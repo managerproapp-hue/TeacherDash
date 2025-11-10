@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useMemo, useContext } from 'react';
-import { AppContextType, AppProviderProps, Student, PracticeGroup, Service, ServiceEvaluation, ServiceRole, EntryExitRecord, PracticalExamEvaluation, TeacherData, InstituteData, AcademicGrades, CourseGrades, Toast, ToastType, StudentCalculatedGrades } from '../types';
+import { AppContextType, AppProviderProps, Student, PracticeGroup, Service, ServiceEvaluation, ServiceRole, EntryExitRecord, PracticalExamEvaluation, TeacherData, InstituteData, AcademicGrades, CourseGrades, Toast, ToastType, StudentCalculatedGrades, PreServiceDayEvaluation } from '../types';
 import { parseFile } from '../services/csvParser';
 import { SERVICE_GRADE_WEIGHTS } from '../data/constants';
 
@@ -74,10 +74,30 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     };
 
     // --- DATA MIGRATIONS ---
-    // (Migrations remain here as they are side effects based on loaded data)
     useEffect(() => {
-        // Migrations for services, elaborations, preService structure, etc.
-    }, [services, serviceEvaluations, setServices, setServiceEvaluations]);
+        // Migration to add 'name' to preService days
+        const needsMigration = serviceEvaluations.some(ev => 
+            // FIX: Add check for 'psd' to prevent runtime errors when checking properties on potentially null values from old data structures.
+            Object.values(ev.preService || {}).some(psd => psd && typeof (psd as PreServiceDayEvaluation).name === 'undefined')
+        );
+
+        if (needsMigration) {
+            console.log("Running migration: Add names to pre-service days...");
+            setServiceEvaluations(prev => prev.map(ev => {
+                const newPreService: { [date: string]: PreServiceDayEvaluation } = {};
+                Object.entries(ev.preService || {}).forEach(([date, psd]) => {
+                    // FIX: Spread types may only be created from object types. Added a check to ensure 'psd' is a non-null object before spreading. This handles potentially corrupt or old data from localStorage.
+                    if (psd && typeof psd === 'object') {
+                        newPreService[date] = {
+                            ...(psd as PreServiceDayEvaluation),
+                            name: (psd as PreServiceDayEvaluation).name || `Pre-servicio ${new Date(date + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`
+                        };
+                    }
+                });
+                return { ...ev, preService: newPreService };
+            }));
+        }
+    }, []); // Run only once on initial load
 
     // --- CALCULATED DATA ---
     const calculatedStudentGrades = useMemo((): Record<string, StudentCalculatedGrades> => {
@@ -153,7 +173,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         const serviceDate = new Date().toISOString().split('T')[0];
         const preServiceDate = getTuesday(serviceDate);
         const newService: Service = { id: newServiceId, name: `Nuevo Servicio ${new Date().toLocaleDateString('es-ES')}`, date: serviceDate, assignedGroups: { comedor: [], takeaway: [] }, elaborations: { comedor: [], takeaway: [] }, studentRoles: [] };
-        const newEvaluation: ServiceEvaluation = { id: `eval-${newServiceId}`, serviceId: newServiceId, preService: { [preServiceDate]: { groupObservations: {}, individualEvaluations: {} } }, serviceDay: { groupScores: {}, individualScores: {} } };
+        const newEvaluation: ServiceEvaluation = { id: `eval-${newServiceId}`, serviceId: newServiceId, preService: { [preServiceDate]: { name: `Pre-servicio ${new Date(preServiceDate + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`, groupObservations: {}, individualEvaluations: {} } }, serviceDay: { groupScores: {}, individualScores: {} } };
         setServices(prev => [...prev, newService]);
         setServiceEvaluations(prev => [...prev, newEvaluation]);
         return newServiceId;
@@ -175,6 +195,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         setServiceRoles(prev => prev.filter(r => r.id !== roleId));
         setServices(prevServices => prevServices.map(service => ({ ...service, studentRoles: service.studentRoles.filter(sr => sr.roleId !== roleId) })));
         addToast('Rol eliminado.', 'info');
+    };
+
+    const handleUpdateStudent = (updatedStudent: Student) => {
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+        addToast('Ficha del alumno actualizada.', 'success');
     };
 
     // --- CONTEXT VALUE ---
@@ -199,6 +224,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         handleSaveServiceAndEvaluation,
         handleDeleteService,
         handleDeleteRole,
+        handleUpdateStudent,
         addToast
     };
 

@@ -74,6 +74,7 @@ export interface ServiceDayIndividualScores {
 }
 
 export interface PreServiceDayEvaluation {
+    name?: string;
     groupObservations: { [groupId: string]: string };
     individualEvaluations: { [studentId: string]: PreServiceIndividualEvaluation };
 }
@@ -249,6 +250,7 @@ export interface AppContextType {
     handleSaveServiceAndEvaluation: (service: Service, evaluation: ServiceEvaluation) => void;
     handleDeleteService: (serviceId: string) => void;
     handleDeleteRole: (roleId: string) => void;
+    handleUpdateStudent: (student: Student) => void;
     
     // Toast Notifications
     addToast: (message: string, type: ToastType) => void;

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Service, ServiceEvaluation, Student, PracticeGroup, EntryExitRecord, PreServiceDayEvaluation, ServiceDayIndividualScores } from '../types';
 import { PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_RATING_MAP, GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS } from '../data/constants';
-import { PlusIcon } from '../components/icons';
+import { PlusIcon, TrashIcon } from '../components/icons';
 
 interface ServiceEvaluationViewProps {
     service: Service;
@@ -242,7 +242,6 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
     const preServiceDates = useMemo(() => Object.keys(evaluation.preService || {}).sort((a,b) => new Date(a).getTime() - new Date(b).getTime()), [evaluation.preService]);
     
     useEffect(() => {
-        // If there's no active date or the active date was deleted from the list, select the latest one.
         if (preServiceDates.length > 0 && (!activePreServiceDate || !preServiceDates.includes(activePreServiceDate))) {
             setActivePreServiceDate(preServiceDates[preServiceDates.length - 1]);
         } else if (preServiceDates.length === 0) {
@@ -287,18 +286,26 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
     }, [onEvaluationChange]);
 
     const handleAddPreServiceDay = () => {
-        const dateStr = prompt("Introduce la fecha para el nuevo día de pre-servicio (YYYY-MM-DD):");
+        const dateStr = prompt("Introduce la fecha para el nuevo día de pre-servicio (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
         if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
             deepCloneAndUpdate(draft => {
                 if (!draft.preService) draft.preService = {};
                 if (!draft.preService[dateStr]) {
-                    draft.preService[dateStr] = { groupObservations: {}, individualEvaluations: {} };
+                    const defaultName = `Pre-servicio ${new Date(dateStr + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`;
+                    draft.preService[dateStr] = { name: defaultName, groupObservations: {}, individualEvaluations: {} };
                 }
             });
-            // Set the new date as active immediately, avoiding race conditions.
             setActivePreServiceDate(dateStr);
         } else if (dateStr) {
             alert("Formato de fecha inválido.");
+        }
+    };
+    
+    const handleDeletePreServiceDay = (date: string) => {
+        if (window.confirm('¿Estás seguro de que quieres eliminar este día de pre-servicio?')) {
+            deepCloneAndUpdate(draft => {
+                delete draft.preService[date];
+            });
         }
     };
 
@@ -317,6 +324,17 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                 draft.preService[date].individualEvaluations[studentId].behaviorScores[behaviorItemId] = value;
             } else {
                 (draft.preService[date].individualEvaluations[studentId] as any)[field] = value;
+            }
+        });
+    };
+    
+    const handlePreServiceNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!activePreServiceDate) return;
+        const newName = e.target.value;
+        const date = activePreServiceDate;
+        deepCloneAndUpdate(draft => {
+            if(draft.preService[date]) {
+                draft.preService[date].name = newName;
             }
         });
     };
@@ -362,16 +380,42 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
             
             {activeTab === 'pre-service' && (
                 <div className="space-y-6">
-                    <div className="flex items-center space-x-2 border-b pb-4">
-                        {preServiceDates.map(date => (
-                             <button key={date} onClick={() => setActivePreServiceDate(date)} className={`px-3 py-1.5 text-sm font-medium rounded-md ${activePreServiceDate === date ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
-                                {new Date(date + 'T12:00:00Z').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' })}
-                             </button>
-                        ))}
+                    <div className="flex items-center space-x-2 border-b pb-4 flex-wrap">
+                        {preServiceDates.map(date => {
+                             const preServiceDay = evaluation.preService[date];
+                             const displayName = preServiceDay?.name || `Pre-servicio ${new Date(date + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`;
+                             return (
+                                 <button key={date} onClick={() => setActivePreServiceDate(date)} className={`px-3 py-1.5 text-sm font-medium rounded-md ${activePreServiceDate === date ? 'bg-gray-200 text-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                     {displayName}
+                                 </button>
+                             )
+                        })}
                          <button onClick={handleAddPreServiceDay} className="flex items-center text-sm text-blue-600 hover:text-blue-800 p-1.5 rounded-md hover:bg-blue-50">
                             <PlusIcon className="w-4 h-4 mr-1" /> Añadir Día
                         </button>
                     </div>
+
+                     {activePreServiceDate && evaluation.preService[activePreServiceDate] && (
+                        <div className="p-4 bg-white rounded-lg shadow-sm">
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <label htmlFor="pre-service-name" className="block text-sm font-medium text-gray-700">Nombre del Evento</label>
+                                    <input
+                                        id="pre-service-name"
+                                        type="text"
+                                        value={evaluation.preService[activePreServiceDate]?.name || ''}
+                                        onChange={handlePreServiceNameChange}
+                                        className="mt-1 block w-full md:w-96 p-2 border border-gray-300 rounded-md shadow-sm"
+                                        placeholder="E.g., Pre-Servicio Semana 3"
+                                    />
+                                </div>
+                                <button onClick={() => handleDeletePreServiceDay(activePreServiceDate)} className="text-sm text-red-600 hover:text-red-800 flex items-center">
+                                    <TrashIcon className="w-4 h-4 mr-1"/>
+                                    Eliminar este día
+                                </button>
+                            </div>
+                        </div>
+                     )}
 
                     {activePreServiceDate && evaluation.preService[activePreServiceDate] && participatingGroups.map(group => {
                         const groupStudents = students.filter(s => group.studentIds.includes(s.id)).sort((a, b) => a.apellido1.localeCompare(b.apellido1));
