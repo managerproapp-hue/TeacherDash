@@ -58,10 +58,12 @@ const GestionPractica: React.FC<GestionPracticaProps> = ({
     
     const handleCreateService = () => {
         const newServiceId = `service-${Date.now()}`;
+        // FIX: Added the 'isLocked' property, which is required by the 'Service' type.
         const newService: Service = {
             id: newServiceId,
             name: `Nuevo Servicio ${new Date().toLocaleDateString('es-ES')}`,
             date: new Date().toISOString().split('T')[0],
+            isLocked: false,
             assignedGroups: { comedor: [], takeaway: [] },
             elaborations: { comedor: [], takeaway: [] },
             studentRoles: [],

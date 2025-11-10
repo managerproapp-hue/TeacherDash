@@ -41,6 +41,7 @@ export interface Service {
   id: string;
   name: string;
   date: string;
+  isLocked: boolean;
   assignedGroups: {
       comedor: string[];
       takeaway: string[];

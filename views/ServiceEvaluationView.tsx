@@ -10,6 +10,7 @@ interface ServiceEvaluationViewProps {
     students: Student[];
     practiceGroups: PracticeGroup[];
     entryExitRecords: EntryExitRecord[];
+    isLocked: boolean;
 }
 
 const getWeekMonday = (date: Date): Date => {
@@ -27,7 +28,8 @@ const PreServiceIndividualTable: React.FC<{
     evaluationData: PreServiceDayEvaluation;
     entryExitRecordsForWeek: Record<string, EntryExitRecord[]>;
     onUpdate: (studentId: string, field: string, value: any, behaviorItemId?: string) => void;
-}> = ({ studentsInGroup, evaluationData, entryExitRecordsForWeek, onUpdate }) => {
+    isLocked: boolean;
+}> = ({ studentsInGroup, evaluationData, entryExitRecordsForWeek, onUpdate, isLocked }) => {
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full text-xs border-collapse">
@@ -45,7 +47,7 @@ const PreServiceIndividualTable: React.FC<{
                                 const isChecked = evaluationData?.individualEvaluations[s.id]?.[field as keyof typeof evaluationData.individualEvaluations[string]] ?? (field === 'attendance');
                                 return (
                                 <td key={s.id} className="p-2 border text-center">
-                                    <input type="checkbox" checked={isChecked} onChange={e => onUpdate(s.id, field, e.target.checked)} className="h-4 w-4" />
+                                    <input type="checkbox" checked={isChecked} onChange={e => onUpdate(s.id, field, e.target.checked)} className="h-4 w-4" disabled={isLocked} />
                                 </td>
                             )})}
                         </tr>
@@ -65,7 +67,7 @@ const PreServiceIndividualTable: React.FC<{
                                         const isSelected = currentScore === rating.value;
                                         return <button key={rating.value} 
                                             onClick={() => onUpdate(s.id, 'behaviorScores', isSelected ? null : rating.value, item.id)}
-                                            disabled={isAbsent}
+                                            disabled={isLocked || isAbsent}
                                             className={`w-6 h-6 flex items-center justify-center rounded-md text-xs font-bold transition ${isSelected ? rating.selectedColor : rating.color} disabled:opacity-50 disabled:cursor-not-allowed`}
                                             title={rating.label}
                                         >{rating.symbol}</button>
@@ -102,7 +104,7 @@ const PreServiceIndividualTable: React.FC<{
                                     <textarea 
                                         value={indEval?.observations || ''}
                                         onChange={e => onUpdate(s.id, 'observations', e.target.value)}
-                                        disabled={isAbsent}
+                                        disabled={isLocked || isAbsent}
                                         className="w-full h-20 p-1 rounded-md border-gray-200 resize-none disabled:bg-gray-100"
                                         placeholder="Anotaciones..."
                                     />
@@ -121,7 +123,8 @@ const ServiceDayIndividualEvaluationTable: React.FC<{
     onUpdate: (studentId: string, updates: Partial<ServiceDayIndividualScores>, itemIndex?: number) => void;
     handleNumericInputChange: (e: React.ChangeEvent<HTMLInputElement>, max: number, updateFn: (value: number | null) => void) => void;
     entryExitRecordsForWeek: Record<string, EntryExitRecord[]>;
-}> = ({ studentsInGroup, evaluationData, onUpdate, handleNumericInputChange, entryExitRecordsForWeek }) => {
+    isLocked: boolean;
+}> = ({ studentsInGroup, evaluationData, onUpdate, handleNumericInputChange, entryExitRecordsForWeek, isLocked }) => {
     
     const totals = useMemo(() => {
         const studentTotals: { [studentId: string]: number } = {};
@@ -151,6 +154,7 @@ const ServiceDayIndividualEvaluationTable: React.FC<{
                                     checked={evaluationData[s.id]?.attendance ?? true} 
                                     onChange={e => onUpdate(s.id, { attendance: e.target.checked })} 
                                     className="h-4 w-4" 
+                                    disabled={isLocked}
                                 />
                             </td>
                         ))}
@@ -174,7 +178,7 @@ const ServiceDayIndividualEvaluationTable: React.FC<{
                                                 newScores[index] = value;
                                                 onUpdate(s.id, { scores: newScores }, index);
                                             })}
-                                            disabled={isAbsent}
+                                            disabled={isLocked || isAbsent}
                                             placeholder={`max: ${item.maxScore.toFixed(2)}`}
                                             className="w-full text-center p-1.5 rounded-md border-gray-300 placeholder-gray-300 disabled:bg-gray-100"
                                         />
@@ -218,7 +222,7 @@ const ServiceDayIndividualEvaluationTable: React.FC<{
                                     <textarea
                                         value={evaluationData[s.id]?.observations || ''}
                                         onChange={e => onUpdate(s.id, { observations: e.target.value })}
-                                        disabled={isAbsent}
+                                        disabled={isLocked || isAbsent}
                                         className="w-full h-20 p-1 rounded-md border-gray-200 resize-none disabled:bg-gray-100"
                                         placeholder="Anotaciones..."
                                     />
@@ -235,7 +239,7 @@ const ServiceDayIndividualEvaluationTable: React.FC<{
 
 // --- Main View Component ---
 
-const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, evaluation, onEvaluationChange, students, practiceGroups, entryExitRecords }) => {
+const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, evaluation, onEvaluationChange, students, practiceGroups, entryExitRecords, isLocked }) => {
     const [activeTab, setActiveTab] = useState<'pre-service' | 'service-day'>('pre-service');
     const [activePreServiceDate, setActivePreServiceDate] = useState<string | null>(null);
 
@@ -390,7 +394,7 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                                  </button>
                              )
                         })}
-                         <button onClick={handleAddPreServiceDay} className="flex items-center text-sm text-blue-600 hover:text-blue-800 p-1.5 rounded-md hover:bg-blue-50">
+                         <button onClick={handleAddPreServiceDay} disabled={isLocked} className="flex items-center text-sm text-blue-600 hover:text-blue-800 p-1.5 rounded-md hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed">
                             <PlusIcon className="w-4 h-4 mr-1" /> Añadir Día
                         </button>
                     </div>
@@ -405,11 +409,12 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                                         type="text"
                                         value={evaluation.preService[activePreServiceDate]?.name || ''}
                                         onChange={handlePreServiceNameChange}
-                                        className="mt-1 block w-full md:w-96 p-2 border border-gray-300 rounded-md shadow-sm"
+                                        className="mt-1 block w-full md:w-96 p-2 border border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"
                                         placeholder="E.g., Pre-Servicio Semana 3"
+                                        disabled={isLocked}
                                     />
                                 </div>
-                                <button onClick={() => handleDeletePreServiceDay(activePreServiceDate)} className="text-sm text-red-600 hover:text-red-800 flex items-center">
+                                <button onClick={() => handleDeletePreServiceDay(activePreServiceDate)} disabled={isLocked} className="text-sm text-red-600 hover:text-red-800 flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
                                     <TrashIcon className="w-4 h-4 mr-1"/>
                                     Eliminar este día
                                 </button>
@@ -427,6 +432,7 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                                     evaluationData={evaluation.preService[activePreServiceDate]}
                                     entryExitRecordsForWeek={entryExitRecordsForWeek}
                                     onUpdate={(studentId, field, value, behaviorItemId) => handlePreServiceIndividualUpdate(activePreServiceDate, studentId, field, value, behaviorItemId)}
+                                    isLocked={isLocked}
                                 />
                             </div>
                         )
@@ -475,7 +481,8 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                                                          })
                                                      })}
                                                      placeholder={`max: ${item.maxScore.toFixed(2)}`}
-                                                     className="w-full text-center p-1.5 rounded-md border-gray-300 placeholder-gray-300"
+                                                     className="w-full text-center p-1.5 rounded-md border-gray-300 placeholder-gray-300 disabled:bg-gray-100"
+                                                     disabled={isLocked}
                                                   />
                                              </td>
                                          )})}
@@ -505,8 +512,9 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                                                         draft.serviceDay.groupScores[group.id].observations = e.target.value;
                                                     });
                                                 }}
-                                                className="w-full h-20 p-1 rounded-md border-gray-200 resize-none"
+                                                className="w-full h-20 p-1 rounded-md border-gray-200 resize-none disabled:bg-gray-100"
                                                 placeholder="Anotaciones..."
+                                                disabled={isLocked}
                                             />
                                         </td>
                                     ))}
@@ -526,6 +534,7 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
                                     onUpdate={handleServiceDayIndividualUpdate}
                                     handleNumericInputChange={handleNumericInputChange}
                                     entryExitRecordsForWeek={entryExitRecordsForWeek}
+                                    isLocked={isLocked}
                                 />
                             </div>
                          )

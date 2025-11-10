@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { Service, ServiceEvaluation, Elaboration, Student, PracticeGroup, ServiceRole, TeacherData, InstituteData } from '../types';
-import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon, PrinterIcon } from '../components/icons';
+import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon, PrinterIcon, LockClosedIcon, LockOpenIcon } from '../components/icons';
+import { PRE_SERVICE_BEHAVIOR_ITEMS, BEHAVIOR_RATING_MAP, GROUP_EVALUATION_ITEMS, INDIVIDUAL_EVALUATION_ITEMS } from '../data/constants';
 import { useAppContext } from '../context/AppContext';
 
 const ServiceEvaluationView = lazy(() => import('./ServiceEvaluationView'));
@@ -15,138 +16,6 @@ interface GestionPracticaViewProps {
 
 
 // --- PDF Generation Logic ---
-const generateWeeklyFollowUpPDF = (
-    service: Service,
-    evaluation: ServiceEvaluation,
-    allStudents: Student[],
-    practiceGroups: PracticeGroup[],
-    serviceRoles: ServiceRole[],
-    teacherData: TeacherData,
-    instituteData: InstituteData
-) => {
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageMargin = 15;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-
-    const addImageToPdf = (imageData: string | null, x: number, y: number, w: number, h: number) => {
-        if (imageData && imageData.startsWith('data:image')) {
-            try {
-                const imageType = imageData.substring(imageData.indexOf('/') + 1, imageData.indexOf(';'));
-                doc.addImage(imageData, imageType.toUpperCase(), x, y, w, h);
-            } catch (e) { console.error("Error adding image:", e); }
-        }
-    };
-
-    const addPageHeaderAndFooter = (pageNumber: number) => {
-        doc.setFont('helvetica', 'normal');
-        // HEADER
-        addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
-        addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
-        doc.setFontSize(10);
-        doc.setTextColor(100);
-        doc.text("Ficha de Seguimiento: " + service.name, pageWidth / 2, 15, { align: 'center' });
-        doc.text(new Date(service.date).toLocaleDateString('es-ES'), pageWidth / 2, 20, { align: 'center' });
-        
-        // FOOTER
-        doc.setFontSize(8);
-        doc.text(`${instituteData.name || 'IES La Flota'} - ${teacherData.name || 'Juan Codina Barranco'}`, pageMargin, pageHeight - 10);
-        doc.text(`Página ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-        doc.text(new Date().toLocaleDateString('es-ES'), pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
-    };
-
-    const participatingGroupIds = new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]);
-    const participatingGroups = practiceGroups.filter(g => participatingGroupIds.has(g.id));
-
-    participatingGroups.forEach((group, groupIndex) => {
-        if (groupIndex > 0) doc.addPage();
-        addPageHeaderAndFooter(groupIndex + 1);
-        
-        const studentsInGroup = allStudents.filter(s => group.studentIds.includes(s.id)).sort((a,b) => a.apellido1.localeCompare(b.apellido1));
-        const serviceArea = service.assignedGroups.comedor.includes(group.id) ? "COMEDOR" : "TAKEAWAY";
-        let y = 30;
-        
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.text(`${group.name} - ${serviceArea}`, pageMargin, y);
-        y += 8;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        const groupObs = evaluation.serviceDay.groupScores[group.id]?.observations || '';
-        (doc as any).autoTable({
-            startY: y,
-            head: [['Observaciones Generales del Grupo']],
-            body: [[groupObs]],
-            theme: 'grid',
-        });
-        y = (doc as any).lastAutoTable.finalY + 5;
-
-        studentsInGroup.forEach((student, studentIndex) => {
-            const studentBlockHeight = 70;
-             if (y + studentBlockHeight > pageHeight - pageMargin) {
-                doc.addPage();
-                addPageHeaderAndFooter(groupIndex + 1);
-                y = 30;
-                 doc.setFont('helvetica', 'bold');
-                 doc.setFontSize(14);
-                 doc.text(`${group.name} - ${serviceArea} (cont.)`, pageMargin, y);
-                 y += 10;
-            }
-            
-            doc.setDrawColor(150);
-            doc.line(pageMargin, y - 2, pageWidth - pageMargin, y - 2);
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(12);
-            doc.text(`${student.apellido1} ${student.apellido2}, ${student.nombre}`, pageMargin, y + 5);
-            const roleId = service.studentRoles.find(sr => sr.studentId === student.id)?.roleId;
-            const roleName = serviceRoles.find(r => r.id === roleId)?.name || 'Sin asignar';
-            doc.text(roleName, pageWidth - pageMargin, y + 5, { align: 'right' });
-            y += 10;
-
-            const preServiceEval = Object.values(evaluation.preService || {})[0]?.individualEvaluations[student.id];
-            const serviceDayEval = evaluation.serviceDay.individualScores[student.id];
-
-            const preServiceBody = [
-                [`Asistencia: Sí [${preServiceEval?.attendance ? 'X' : ' '}] No [${preServiceEval?.attendance ? ' ' : 'X'}]`],
-                [`Uniforme completo: [${preServiceEval?.hasUniforme ? 'X' : ' '}]`],
-                [`Fichas técnicas: [${preServiceEval?.hasFichas ? 'X' : ' '}]`],
-                [`Material requerido: [${preServiceEval?.hasMaterial ? 'X' : ' '}]`],
-                [{ content: preServiceEval?.observations || '', styles: { minCellHeight: 20 } }]
-            ];
-             const serviceDayBody = [
-                [`Asistencia: Sí [${serviceDayEval?.attendance ? 'X' : ' '}] No [${serviceDayEval?.attendance ? ' ' : 'X'}]`],
-                [`Uniforme completo: [ ]`],
-                [`Fichas técnicas: [ ]`],
-                [`Material requerido: [ ]`],
-                [{ content: serviceDayEval?.observations || '', styles: { minCellHeight: 20 } }]
-            ];
-
-            (doc as any).autoTable({
-                startY: y,
-                head: [['DÍA PREVIO']],
-                body: preServiceBody,
-                theme: 'grid',
-                tableWidth: (pageWidth / 2) - pageMargin - 2,
-                margin: { left: pageMargin }
-            });
-
-             (doc as any).autoTable({
-                startY: y,
-                head: [['DÍA DE SERVICIO']],
-                body: serviceDayBody,
-                theme: 'grid',
-                tableWidth: (pageWidth / 2) - pageMargin - 2,
-                margin: { left: pageWidth / 2 + 2 }
-            });
-            y += studentBlockHeight;
-        });
-    });
-    
-    doc.save(`Ficha_Seguimiento_${service.name.replace(/ /g, '_')}.pdf`);
-};
-
 const generatePlanningPDF = (
     service: Service,
     allStudents: Student[],
@@ -299,6 +168,148 @@ const generatePlanningPDF = (
     doc.save(`Planning_${service.name.replace(/ /g, '_')}.pdf`);
 };
 
+const generateServiceReportPDF = (
+    service: Service,
+    evaluation: ServiceEvaluation,
+    allStudents: Student[],
+    practiceGroups: PracticeGroup[],
+    serviceRoles: ServiceRole[],
+    teacherData: TeacherData,
+    instituteData: InstituteData
+) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    let pageCount = 1;
+    const pageMargin = 15;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let y = 0;
+
+    const addImageToPdf = (imageData: string | null, x: number, y: number, w: number, h: number) => {
+        if (imageData && imageData.startsWith('data:image')) {
+            try {
+                const imageType = imageData.substring(imageData.indexOf('/') + 1, imageData.indexOf(';'));
+                doc.addImage(imageData, imageType.toUpperCase(), x, y, w, h);
+            } catch (e) { console.error("Error adding image:", e); }
+        }
+    };
+    
+    const addPageHeaderAndFooter = () => {
+        doc.setFont('helvetica', 'normal');
+        // HEADER
+        addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
+        addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
+        doc.setFontSize(12);
+        doc.setTextColor(80);
+        doc.text(`Informe de Servicio: ${service.name}`, pageWidth / 2, 15, { align: 'center' });
+        doc.setFontSize(10);
+        doc.text(new Date(service.date).toLocaleDateString('es-ES', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}), pageWidth / 2, 20, { align: 'center' });
+        doc.setDrawColor(200);
+        doc.line(pageMargin, 25, pageWidth - pageMargin, 25);
+        
+        // FOOTER
+        doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
+        doc.setFontSize(8);
+        doc.text(`${instituteData.name || 'IES La Flota'} - ${teacherData.name || 'Juan Codina Barranco'}`, pageMargin, pageHeight - 10);
+        doc.text(`Página ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text(new Date().toLocaleDateString('es-ES'), pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
+    };
+
+    const checkPageBreak = (neededHeight: number) => {
+        if (y + neededHeight > pageHeight - 20) {
+            addPageHeaderAndFooter();
+            doc.addPage();
+            pageCount++;
+            y = 30;
+            return true;
+        }
+        return false;
+    };
+    
+    // FIX: The 'participatingGroups' variable was defined in a nested scope, causing reference errors. It has been moved to the function's top-level scope to be accessible throughout.
+    const participatingGroups = practiceGroups.filter(g => new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]).has(g.id));
+
+    // --- START DOCUMENT ---
+    addPageHeaderAndFooter();
+    y = 30;
+
+    // --- PRE-SERVICE ---
+    Object.entries(evaluation.preService).forEach(([date, preServiceDay]) => {
+        checkPageBreak(20);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Evaluación Pre-Servicio: ${preServiceDay.name || date}`, pageMargin, y);
+        y+= 8;
+
+        participatingGroups.forEach(group => {
+            const studentsInGroup = allStudents.filter(s => group.studentIds.includes(s.id));
+            const head = [['Alumno', 'Asist.', 'Fichas', 'Unif.', 'Mat.', ...PRE_SERVICE_BEHAVIOR_ITEMS.map(i => i.label), 'Observaciones']];
+            const body = studentsInGroup.map(student => {
+                const evalData = preServiceDay.individualEvaluations[student.id];
+                return [
+                    `${student.apellido1}, ${student.nombre}`,
+                    evalData?.attendance ? 'Sí' : 'No',
+                    evalData?.hasFichas ? 'Sí' : 'No',
+                    evalData?.hasUniforme ? 'Sí' : 'No',
+                    evalData?.hasMaterial ? 'Sí' : 'No',
+                    ...PRE_SERVICE_BEHAVIOR_ITEMS.map(i => BEHAVIOR_RATING_MAP.find(r => r.value === evalData?.behaviorScores[i.id])?.symbol || '-'),
+                    evalData?.observations || ''
+                ];
+            });
+
+            checkPageBreak(15 + body.length * 8);
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Grupo: ${group.name}`, pageMargin, y);
+            y+= 6;
+            
+            (doc as any).autoTable({ startY: y, head, body, theme: 'grid', headStyles: { fillColor: [22, 163, 74] }, styles: { fontSize: 8 } });
+            y = (doc as any).lastAutoTable.finalY + 10;
+        });
+    });
+
+    // --- SERVICE DAY ---
+    if(checkPageBreak(30)) addPageHeaderAndFooter();
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Evaluación Día de Servicio', pageMargin, y);
+    y+= 8;
+
+    // Group Evaluation
+    const groupHead = [['Criterio', ...participatingGroups.map(g => g.name)]];
+    const groupBody = [
+        ...GROUP_EVALUATION_ITEMS.map((item, index) => [item.label, ...participatingGroups.map(g => evaluation.serviceDay.groupScores[g.id]?.scores[index]?.toFixed(2) || '-')]),
+        ['TOTAL', ...participatingGroups.map(g => (evaluation.serviceDay.groupScores[g.id]?.scores.reduce((a, b) => a + (b||0), 0) || 0).toFixed(2) )],
+        ['Observaciones', ...participatingGroups.map(g => evaluation.serviceDay.groupScores[g.id]?.observations || '')]
+    ];
+    (doc as any).autoTable({ startY: y, head: groupHead, body: groupBody, theme: 'grid', headStyles: { fillColor: [37, 99, 235] } });
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // Individual Evaluation
+    participatingGroups.forEach(group => {
+        const studentsInGroup = allStudents.filter(s => group.studentIds.includes(s.id));
+        checkPageBreak(25 + studentsInGroup.length * 8);
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Evaluación Individual - ${group.name}`, pageMargin, y);
+        y += 8;
+        
+        const indHead = [['Alumno', ...INDIVIDUAL_EVALUATION_ITEMS.map(i => i.label), 'TOTAL', 'Observaciones']];
+        const indBody = studentsInGroup.map(student => {
+            const indEval = evaluation.serviceDay.individualScores[student.id];
+            const total = (indEval?.scores.reduce((a, b) => a + (b||0), 0) || 0).toFixed(2);
+            return [
+                `${student.apellido1}, ${student.nombre}`,
+                ...INDIVIDUAL_EVALUATION_ITEMS.map((item, index) => indEval?.scores[index]?.toFixed(2) || '-'),
+                total,
+                indEval?.observations || ''
+            ];
+        });
+        (doc as any).autoTable({ startY: y, head: indHead, body: indBody, theme: 'grid', headStyles: { fillColor: [147, 51, 234] }, styles: { fontSize: 7, cellWidth: 'auto' } });
+        y = (doc as any).lastAutoTable.finalY + 10;
+    });
+
+    doc.save(`Informe_Servicio_${service.name.replace(/ /g, '_')}.pdf`);
+};
 
 const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({ 
     initialServiceId, initialServiceTab, clearInitialServiceContext 
@@ -307,7 +318,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         students, practiceGroups, services, serviceEvaluations, serviceRoles, 
         entryExitRecords, handleCreateService: contextCreateService, 
         handleSaveServiceAndEvaluation, handleDeleteService,
-        teacherData, instituteData
+        teacherData, instituteData, addToast
     } = useAppContext();
 
     const [selectedServiceId, setSelectedServiceId] = useState<string | null>(initialServiceId);
@@ -363,24 +374,53 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         }
     };
     
-    const handleGenerateWeeklyPdf = () => {
+    const handleToggleLock = () => {
         if (editedService && editedEvaluation) {
-            generateWeeklyFollowUpPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+            const action = editedService.isLocked ? 'abrir' : 'cerrar';
+            const confirmationMessage = action === 'cerrar'
+                ? '¿Estás seguro de que quieres cerrar este servicio? Una vez cerrado, no podrás realizar cambios hasta que lo vuelvas a abrir.'
+                : '¿Estás seguro de que quieres abrir este servicio? Podrás volver a editar la planificación y las evaluaciones.';
+            
+            if (window.confirm(confirmationMessage)) {
+                const toggledService = { ...editedService, isLocked: !editedService.isLocked };
+                setEditedService(toggledService);
+                handleSaveServiceAndEvaluation(toggledService, editedEvaluation);
+            }
         }
     };
-
+    
     const handleGeneratePlanningPdf = () => {
-        if (editedService) {
-            generatePlanningPDF(editedService, students, practiceGroups, serviceRoles, teacherData, instituteData);
+        if (!editedService) {
+            addToast('No hay un servicio seleccionado para generar el planning.', 'error');
+            return;
         }
-    }
+        try {
+            generatePlanningPDF(editedService, students, practiceGroups, serviceRoles, teacherData, instituteData);
+        } catch (error) {
+            console.error("Fallo al generar el PDF del planning:", error);
+            addToast('Error al generar el planning. Revisa que todos los datos del servicio estén correctos.', 'error');
+        }
+    };
+    
+    const handleGenerateReport = () => {
+        if (!editedService || !editedEvaluation) {
+            addToast('No hay datos de servicio o evaluación para generar el informe.', 'error');
+            return;
+        }
+        try {
+            generateServiceReportPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
+        } catch (error) {
+            console.error("Fallo al generar el PDF del informe:", error);
+            addToast('Error al generar el informe. Revisa que todos los datos de evaluación estén completos.', 'error');
+        }
+    };
     
     const handleServiceFieldChange = (field: keyof Service, value: any) => {
         setEditedService(prev => prev ? { ...prev, [field]: value } : null);
     };
     
     const toggleGroupAssignment = (area: 'comedor' | 'takeaway', groupId: string) => {
-        if (!editedService) return;
+        if (!editedService || editedService.isLocked) return;
         const currentAssignments = editedService.assignedGroups[area];
         const newAssignments = currentAssignments.includes(groupId)
             ? currentAssignments.filter(id => id !== groupId)
@@ -389,6 +429,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
     };
     
     const handleAddElaboration = (area: 'comedor' | 'takeaway') => {
+        if (editedService?.isLocked) return;
         const { name, responsibleGroupId } = newElaboration[area];
         if (!name.trim() || !responsibleGroupId) {
             alert('Introduce un nombre para el plato y selecciona un grupo responsable.');
@@ -403,14 +444,14 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
     };
 
     const handleUpdateElaboration = (area: 'comedor' | 'takeaway', id: string, field: keyof Elaboration, value: string) => {
-        if (editedService) {
+        if (editedService && !editedService.isLocked) {
             const updatedElaborations = { ...editedService.elaborations, [area]: editedService.elaborations[area].map(e => e.id === id ? { ...e, [field]: value } : e) };
             setEditedService({ ...editedService, elaborations: updatedElaborations });
         }
     };
 
     const handleDeleteElaboration = (area: 'comedor' | 'takeaway', id: string) => {
-        if (editedService) {
+        if (editedService && !editedService.isLocked) {
             const updatedElaborations = { ...editedService.elaborations, [area]: editedService.elaborations[area].filter(e => e.id !== id) };
             setEditedService({ ...editedService, elaborations: updatedElaborations });
         }
@@ -427,7 +468,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
     }, [editedService, practiceGroups, students]);
     
     const handleStudentRoleChange = (studentId: string, roleId: string | null) => {
-        if (!editedService) return;
+        if (!editedService || editedService.isLocked) return;
         const existingAssignmentIndex = editedService.studentRoles.findIndex(sr => sr.studentId === studentId);
         const newStudentRoles = [...editedService.studentRoles];
         if (roleId === null || roleId === '') {
@@ -466,20 +507,35 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             );
         }
 
+        const isLocked = editedService.isLocked;
+
         return (
             <div>
                  <header className="flex flex-wrap justify-between items-center gap-4 mb-6 pb-4 border-b">
-                    <div>
-                        <input type="text" value={editedService.name} onChange={(e) => handleServiceFieldChange('name', e.target.value)} className="text-3xl font-bold text-gray-800 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-md p-1 -ml-1"/>
-                         <input type="date" value={editedService.date} onChange={(e) => handleServiceFieldChange('date', e.target.value)} className="text-gray-500 mt-1 block bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-md"/>
+                    <div className="flex items-center gap-4">
+                         <button onClick={handleToggleLock} title={isLocked ? "Abrir servicio" : "Cerrar servicio"}>
+                            {isLocked ? <LockClosedIcon className="w-8 h-8 text-red-500 hover:text-red-700" /> : <LockOpenIcon className="w-8 h-8 text-green-500 hover:text-green-700"/>}
+                        </button>
+                        <div>
+                            <input type="text" value={editedService.name} onChange={(e) => handleServiceFieldChange('name', e.target.value)} disabled={isLocked} className="text-3xl font-bold text-gray-800 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-md p-1 -ml-1 disabled:bg-gray-100"/>
+                            <input type="date" value={editedService.date} onChange={(e) => handleServiceFieldChange('date', e.target.value)} disabled={isLocked} className="text-gray-500 mt-1 block bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-md disabled:bg-gray-100"/>
+                        </div>
                     </div>
                     <div className="flex items-center space-x-2 flex-wrap gap-2">
-                        <button onClick={handleGeneratePlanningPdf} className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"><PrinterIcon className="w-5 h-5 mr-1" /> Generar Planning</button>
-                        <button onClick={handleGenerateWeeklyPdf} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Ficha Semanal</button>
-                        <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition"><SaveIcon className="w-5 h-5 mr-1" /> Guardar</button>
-                        <button onClick={handleDelete} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition"><TrashIcon className="w-5 h-5" /></button>
+                        {isLocked && <button onClick={handleGenerateReport} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Informe de Servicio</button>}
+                        <button onClick={handleGeneratePlanningPdf} className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"><PrinterIcon className="w-5 h-5 mr-1" /> Planning</button>
+                        {!isLocked && <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition"><SaveIcon className="w-5 h-5 mr-1" /> Guardar</button>}
+                        {!isLocked && <button onClick={handleDelete} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition"><TrashIcon className="w-5 h-5" /></button>}
                     </div>
                 </header>
+                
+                {isLocked && (
+                    <div className="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-md">
+                        <p className="font-bold">Este servicio está cerrado y no puede ser modificado.</p>
+                        <p className="text-sm">Toda la información es de solo lectura. Puedes generar el informe final del servicio.</p>
+                    </div>
+                )}
+
 
                 <div className="border-b border-gray-200 mb-6">
                     <nav className="flex space-x-2">
@@ -506,11 +562,11 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                                     return (
                                     <div key={area} className={`bg-white p-4 rounded-lg shadow-sm border-t-4 border-${areaColor}-500`}>
                                         <h3 className={`text-xl font-bold mb-3 capitalize text-${areaColor}-600`}>Grupos en {area}</h3>
-                                        <div className="space-y-2">{practiceGroups.map(group => (<label key={group.id} className="flex items-center p-3 rounded-md hover:bg-gray-50 cursor-pointer"><input type="checkbox" checked={assignedGroupIds.includes(group.id)} onChange={() => toggleGroupAssignment(area, group.id)} className={`h-4 w-4 rounded border-gray-300 text-${areaColor}-600 focus:ring-${areaColor}-500`}/> <span className="ml-3 text-sm font-medium text-gray-800">{group.name}</span></label>))}</div>
+                                        <div className="space-y-2">{practiceGroups.map(group => (<label key={group.id} className="flex items-center p-3 rounded-md hover:bg-gray-50 cursor-pointer"><input type="checkbox" checked={assignedGroupIds.includes(group.id)} onChange={() => toggleGroupAssignment(area, group.id)} disabled={isLocked} className={`h-4 w-4 rounded border-gray-300 text-${areaColor}-600 focus:ring-${areaColor}-500`}/> <span className="ml-3 text-sm font-medium text-gray-800">{group.name}</span></label>))}</div>
                                         <div className="mt-6 border-t pt-4">
                                             <h4 className={`text-lg font-bold mb-3 text-${areaColor}-600`}>Elaboraciones para {area}</h4>
-                                            <div className="space-y-3 mb-4">{editedService.elaborations[area].map((elab, index) => (<div key={elab.id} className="flex items-center gap-2 text-sm"><span className="font-semibold text-gray-500">{index + 1}.</span><input type="text" value={elab.name} onChange={e => handleUpdateElaboration(area, elab.id, 'name', e.target.value)} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm"/><select value={elab.responsibleGroupId || ''} onChange={e => handleUpdateElaboration(area, elab.id, 'responsibleGroupId', e.target.value)} className="p-1.5 border-gray-300 rounded-md shadow-sm"><option value="">Asignar...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleDeleteElaboration(area, elab.id)} className="p-1 text-gray-400 hover:text-red-500"><TrashIcon className="w-4 h-4" /></button></div>))}</div>
-                                            {availableGroupsForElaboration.length > 0 ? (<div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md"><input type="text" placeholder="Nombre del nuevo plato" value={newElaboration[area].name} onChange={e => setNewElaboration(p => ({...p, [area]: {...p[area], name: e.target.value}}))} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm"/><select value={newElaboration[area].responsibleGroupId} onChange={e => setNewElaboration(p => ({...p, [area]: {...p[area], responsibleGroupId: e.target.value}}))} className="p-1.5 border-gray-300 rounded-md shadow-sm"><option value="">Seleccionar grupo...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleAddElaboration(area)} className={`bg-${areaColor}-500 text-white px-3 py-1.5 rounded-md font-semibold hover:bg-${areaColor}-600`}>Añadir</button></div>) : (<p className="text-sm text-gray-500 text-center p-2 bg-gray-50 rounded-md">Asigna al menos un grupo a esta área para poder añadir elaboraciones.</p>)}
+                                            <div className="space-y-3 mb-4">{editedService.elaborations[area].map((elab, index) => (<div key={elab.id} className="flex items-center gap-2 text-sm"><span className="font-semibold text-gray-500">{index + 1}.</span><input type="text" value={elab.name} onChange={e => handleUpdateElaboration(area, elab.id, 'name', e.target.value)} disabled={isLocked} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"/><select value={elab.responsibleGroupId || ''} onChange={e => handleUpdateElaboration(area, elab.id, 'responsibleGroupId', e.target.value)} disabled={isLocked} className="p-1.5 border-gray-300 rounded-md shadow-sm disabled:bg-gray-100"><option value="">Asignar...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleDeleteElaboration(area, elab.id)} disabled={isLocked} className="p-1 text-gray-400 hover:text-red-500 disabled:cursor-not-allowed"><TrashIcon className="w-4 h-4" /></button></div>))}</div>
+                                            {!isLocked && (availableGroupsForElaboration.length > 0 ? (<div className="flex items-center gap-2 p-2 bg-gray-50 rounded-md"><input type="text" placeholder="Nombre del nuevo plato" value={newElaboration[area].name} onChange={e => setNewElaboration(p => ({...p, [area]: {...p[area], name: e.target.value}}))} className="flex-grow p-1.5 border-gray-300 rounded-md shadow-sm"/><select value={newElaboration[area].responsibleGroupId} onChange={e => setNewElaboration(p => ({...p, [area]: {...p[area], responsibleGroupId: e.target.value}}))} className="p-1.5 border-gray-300 rounded-md shadow-sm"><option value="">Seleccionar grupo...</option>{availableGroupsForElaboration.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select><button onClick={() => handleAddElaboration(area)} className={`bg-${areaColor}-500 text-white px-3 py-1.5 rounded-md font-semibold hover:bg-${areaColor}-600`}>Añadir</button></div>) : (<p className="text-sm text-gray-500 text-center p-2 bg-gray-50 rounded-md">Asigna al menos un grupo a esta área para poder añadir elaboraciones.</p>))}
                                         </div>
                                     </div>
                                 )})}
@@ -526,7 +582,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                                             {groupedStudentsInService.map(({ group, students: studentsInGroup }) => (
                                                 <React.Fragment key={group.id}>
                                                     <tr><td colSpan={2} className={`px-4 py-2 font-bold text-gray-800 border-b-2 ${group.color.split(' ')[0]} ${group.color.split(' ')[1]}`}>{group.name}</td></tr>
-                                                    {studentsInGroup.map(student => (<tr key={student.id} className={`border-b hover:bg-gray-50 border-l-4 ${group.color.split(' ')[1]}`}><td className="px-4 py-2 font-medium text-gray-800">{`${student.apellido1} ${student.apellido2}, ${student.nombre}`}</td><td className="px-4 py-2"><select value={editedService.studentRoles.find(sr => sr.studentId === student.id)?.roleId || ''} onChange={e => handleStudentRoleChange(student.id, e.target.value || null)} className="w-full p-1.5 border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"><option value="">Sin asignar</option>{serviceRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></td></tr>))}
+                                                    {studentsInGroup.map(student => (<tr key={student.id} className={`border-b hover:bg-gray-50 border-l-4 ${group.color.split(' ')[1]}`}><td className="px-4 py-2 font-medium text-gray-800">{`${student.apellido1} ${student.apellido2}, ${student.nombre}`}</td><td className="px-4 py-2"><select value={editedService.studentRoles.find(sr => sr.studentId === student.id)?.roleId || ''} onChange={e => handleStudentRoleChange(student.id, e.target.value || null)} disabled={isLocked} className="w-full p-1.5 border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:bg-gray-100"><option value="">Sin asignar</option>{serviceRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></td></tr>))}
                                                 </React.Fragment>
                                             ))}
                                         </tbody>
@@ -545,6 +601,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                            students={students}
                            practiceGroups={practiceGroups}
                            entryExitRecords={entryExitRecords}
+                           isLocked={isLocked}
                         />
                     </Suspense>
                 )}
@@ -560,7 +617,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                     <button onClick={handleCreateService} className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-transform transform hover:scale-110"><PlusIcon className="w-5 h-5" /></button>
                 </div>
                 <ul className="space-y-2">
-                    {sortedServices.map(service => (<li key={service.id}><a href="#" onClick={(e) => { e.preventDefault(); setSelectedServiceId(service.id); setMainTab('planning'); }} className={`block p-3 rounded-lg transition-colors ${selectedServiceId === service.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}><p className={`font-semibold ${selectedServiceId === service.id ? 'text-blue-800' : 'text-gray-800'}`}>{service.name}</p><p className="text-sm text-gray-500">{new Date(service.date).toLocaleDateString('es-ES')}</p></a></li>))}
+                    {sortedServices.map(service => (<li key={service.id}><a href="#" onClick={(e) => { e.preventDefault(); setSelectedServiceId(service.id); setMainTab('planning'); }} className={`block p-3 rounded-lg transition-colors ${selectedServiceId === service.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}><div className="flex justify-between items-center"><p className={`font-semibold ${selectedServiceId === service.id ? 'text-blue-800' : 'text-gray-800'}`}>{service.name}</p> {service.isLocked && <LockClosedIcon className="w-4 h-4 text-gray-500" />}</div><p className="text-sm text-gray-500">{new Date(service.date).toLocaleDateString('es-ES')}</p></a></li>))}
                 </ul>
             </aside>
             <main className="flex-1 p-4 sm:p-6 bg-gray-50 overflow-y-auto">{renderWorkspace()}</main>

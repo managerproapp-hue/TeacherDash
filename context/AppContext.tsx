@@ -76,17 +76,15 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     // --- DATA MIGRATIONS ---
     useEffect(() => {
         // Migration to add 'name' to preService days
-        const needsMigration = serviceEvaluations.some(ev => 
-            // FIX: Add check for 'psd' to prevent runtime errors when checking properties on potentially null values from old data structures.
+        const needsNameMigration = serviceEvaluations.some(ev => 
             Object.values(ev.preService || {}).some(psd => psd && typeof (psd as PreServiceDayEvaluation).name === 'undefined')
         );
 
-        if (needsMigration) {
+        if (needsNameMigration) {
             console.log("Running migration: Add names to pre-service days...");
             setServiceEvaluations(prev => prev.map(ev => {
                 const newPreService: { [date: string]: PreServiceDayEvaluation } = {};
                 Object.entries(ev.preService || {}).forEach(([date, psd]) => {
-                    // FIX: Spread types may only be created from object types. Added a check to ensure 'psd' is a non-null object before spreading. This handles potentially corrupt or old data from localStorage.
                     if (psd && typeof psd === 'object') {
                         newPreService[date] = {
                             ...(psd as PreServiceDayEvaluation),
@@ -97,6 +95,14 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
                 return { ...ev, preService: newPreService };
             }));
         }
+
+        // Migration to add 'isLocked' to services
+        const needsLockMigration = services.some(s => typeof s.isLocked === 'undefined');
+        if (needsLockMigration) {
+             console.log("Running migration: Add isLocked flag to services...");
+             setServices(prev => prev.map(s => ({ ...s, isLocked: s.isLocked ?? false })));
+        }
+
     }, []); // Run only once on initial load
 
     // --- CALCULATED DATA ---
@@ -172,7 +178,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
         const newServiceId = `service-${Date.now()}`;
         const serviceDate = new Date().toISOString().split('T')[0];
         const preServiceDate = getTuesday(serviceDate);
-        const newService: Service = { id: newServiceId, name: `Nuevo Servicio ${new Date().toLocaleDateString('es-ES')}`, date: serviceDate, assignedGroups: { comedor: [], takeaway: [] }, elaborations: { comedor: [], takeaway: [] }, studentRoles: [] };
+        const newService: Service = { id: newServiceId, name: `Nuevo Servicio ${new Date().toLocaleDateString('es-ES')}`, date: serviceDate, isLocked: false, assignedGroups: { comedor: [], takeaway: [] }, elaborations: { comedor: [], takeaway: [] }, studentRoles: [] };
         const newEvaluation: ServiceEvaluation = { id: `eval-${newServiceId}`, serviceId: newServiceId, preService: { [preServiceDate]: { name: `Pre-servicio ${new Date(preServiceDate + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`, groupObservations: {}, individualEvaluations: {} } }, serviceDay: { groupScores: {}, individualScores: {} } };
         setServices(prev => [...prev, newService]);
         setServiceEvaluations(prev => [...prev, newEvaluation]);
