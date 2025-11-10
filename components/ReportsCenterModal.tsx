@@ -30,46 +30,6 @@ const addImageToPdf = (doc: jsPDF, imageData: string | null, x: number, y: numbe
     }
 };
 
-const addHeaderAndFooter = (
-    doc: jsPDF,
-    title: string,
-    teacherData: TeacherData,
-    instituteData: InstituteData
-) => {
-    const pageCount = doc.internal.pages.length > 1 ? doc.internal.pages.length - 1 : 1;
-    for (let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        const pageMargin = 15;
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-
-        // HEADER
-        addImageToPdf(doc, instituteData.logo, pageMargin, 10, 15, 15);
-        addImageToPdf(doc, teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
-        
-        doc.setFontSize(10);
-        doc.setTextColor(100);
-        doc.text(instituteData.name || 'Instituto', pageMargin + 17, 15);
-        doc.text(teacherData.name || 'Profesor', pageWidth - pageMargin - 17, 15, { align: 'right' });
-
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(40);
-        doc.text(title, pageWidth / 2, 20, { align: 'center' });
-        
-        doc.setDrawColor(180);
-        doc.line(pageMargin, 28, pageWidth - pageMargin, 28);
-
-        // FOOTER
-        doc.setFontSize(8);
-        doc.setTextColor(120);
-        doc.line(pageMargin, pageHeight - 15, pageWidth - pageMargin, pageHeight - 15);
-        doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-        const dateStr = new Date().toLocaleDateString('es-ES');
-        doc.text(dateStr, pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
-    }
-};
-
 const didDrawPageCallback = (doc: jsPDF, title: string, teacherData: TeacherData, instituteData: InstituteData) => (data: any) => {
     const pageMargin = 15;
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -96,7 +56,7 @@ const didDrawPageCallback = (doc: jsPDF, title: string, teacherData: TeacherData
 // --- PDF Generation Functions ---
 
 const generateTrackingSheetPDF = (doc: jsPDF, viewModel: any, teacherData: TeacherData, instituteData: InstituteData) => {
-    const { service, participatingGroups, allStudents } = viewModel;
+    const { service, participatingGroups, allStudents, serviceRoles } = viewModel;
 
     participatingGroups.forEach((group: PracticeGroup, index: number) => {
         if (index > 0) doc.addPage();
@@ -107,24 +67,23 @@ const generateTrackingSheetPDF = (doc: jsPDF, viewModel: any, teacherData: Teach
             startY: 35,
             head: [['Alumnos del Grupo', 'Puesto']],
             body: studentsInGroup.map((s: Student) => {
-                const role = service.studentRoles.find((sr: any) => sr.studentId === s.id);
-                const roleName = role ? viewModel.serviceRoles.find((r: ServiceRole) => r.id === role.roleId)?.name : 'Sin asignar';
-                return [`${s.apellido1} ${s.apellido2}, ${s.nombre}`, roleName];
+                const roleAssignment = service.studentRoles.find((sr: any) => sr.studentId === s.id);
+                const role = roleAssignment ? serviceRoles.find((r: ServiceRole) => r.id === roleAssignment.roleId) : null;
+                return [`${s.apellido1} ${s.apellido2}, ${s.nombre}`, role ? role.name : 'Sin asignar'];
             }),
             theme: 'striped', headStyles: { fillColor: [41, 128, 185] }, didDrawPage
         });
         let lastY = (doc as any).lastAutoTable.finalY;
         
-        (doc as any).autoTable({ startY: lastY + 5, head: [['Observaciones Grupales', '']], body: [['', '']], theme: 'grid', tableHeight: 'auto', styles: { minCellHeight: 40 }, didDrawPage });
+        (doc as any).autoTable({ startY: lastY + 5, head: [['Observaciones Grupales']], body: [[' ']], theme: 'grid', bodyStyles: { minCellHeight: 60 }, didDrawPage });
         lastY = (doc as any).lastAutoTable.finalY;
         
-        (doc as any).autoTable({ startY: lastY + 5, head: [['Observaciones Individuales', '']], body: studentsInGroup.map((s: Student) => [`${s.apellido1} ${s.nombre.charAt(0)}.`,'']), theme: 'grid', styles: { minCellHeight: 20 }, didDrawPage });
+        (doc as any).autoTable({ startY: lastY + 5, head: [['Observaciones Individuales', 'Comentarios']], body: studentsInGroup.map((s: Student) => [`${s.apellido1}, ${s.nombre.charAt(0)}.`,'']), theme: 'grid', bodyStyles: { minCellHeight: 20 }, didDrawPage });
     });
 };
 
 const generatePlanningPDF = (doc: jsPDF, viewModel: any, teacherData: TeacherData, instituteData: InstituteData) => {
     const { service, serviceRoles, practiceGroups, allStudents } = viewModel;
-    const pageMargin = 15;
     const didDrawPage = didDrawPageCallback(doc, `Planning: ${service.name}`, teacherData, instituteData);
     let startY = 35;
 
@@ -144,24 +103,44 @@ const generatePlanningPDF = (doc: jsPDF, viewModel: any, teacherData: TeacherDat
     ['comedor', 'takeaway'].forEach(area => {
         const assignedGroupIds = service.assignedGroups[area] || [];
         if (assignedGroupIds.length === 0) return;
-        const areaTitle = `SERVICIO DE ${area.toUpperCase()}`;
-        (doc as any).autoTable({ startY, head: [[{content: areaTitle, styles: {fillColor: '#4CAF50', textColor: '#ffffff', halign: 'center'}}]], theme: 'plain', didDrawPage });
+        
+        (doc as any).autoTable({
+            startY,
+            head: [[{ content: `SERVICIO DE ${area.toUpperCase()}`, styles: { fillColor: '#2E7D32', textColor: '#FFFFFF', halign: 'center' } }]],
+            theme: 'plain',
+            didDrawPage
+        });
         startY = (doc as any).lastAutoTable.finalY + 2;
 
-        const groupsInArea = practiceGroups.filter((g: PracticeGroup) => assignedGroupIds.includes(g.id));
-        const elaborations = service.elaborations[area] || [];
-
-        (doc as any).autoTable({ startY, head: [['Elaboraciones', 'Grupo Responsable']], body: elaborations.map((e: Elaboration) => [e.name, practiceGroups.find((g: PracticeGroup) => g.id === e.responsibleGroupId)?.name || 'N/A']), theme: 'grid', didDrawPage });
-        startY = (doc as any).lastAutoTable.finalY + 8;
-        
+        const groupsInArea = practiceGroups.filter((g: PracticeGroup) => assignedGroupIds.includes(g.id)).sort((a: PracticeGroup, b: PracticeGroup) => a.name.localeCompare(b.name));
+       
         groupsInArea.forEach((group: PracticeGroup) => {
+            const elaborations = (service.elaborations[area] || []).filter((e: Elaboration) => e.responsibleGroupId === group.id);
             const studentsInGroup = allStudents.filter((s: Student) => group.studentIds.includes(s.id)).sort((a: Student, b: Student) => a.apellido1.localeCompare(b.apellido1));
-            const studentBody = studentsInGroup.map((student: Student) => {
-                const assignment = (service.studentRoles || []).find((sr: any) => sr.studentId === student.id);
-                const role = assignment ? serviceRoles.find((r: ServiceRole) => r.id === assignment.roleId) : null;
-                return [`${student.apellido1} ${student.apellido2}, ${student.nombre}`, role ? role.name : 'Sin asignar'];
+            
+            const body = studentsInGroup.map((student: Student) => {
+                 const assignment = (service.studentRoles || []).find((sr: any) => sr.studentId === student.id);
+                 const role = assignment ? serviceRoles.find((r: ServiceRole) => r.id === assignment.roleId) : null;
+                 return [`${student.apellido1} ${student.apellido2}, ${student.nombre}`, role ? role.name : 'Sin asignar'];
             });
-            (doc as any).autoTable({ startY, head: [[{content: group.name, styles: {fontStyle: 'bold'}}], ['Alumno', 'Puesto']], body: studentBody, theme: 'striped', didDrawPage });
+
+            if (elaborations.length > 0) {
+                 (doc as any).autoTable({
+                    startY,
+                    head: [[{ content: `Elaboraciones: ${elaborations.map((e: Elaboration) => e.name).join(', ')}`, styles: { fontStyle: 'italic', fontSize: 8 } }]],
+                    theme: 'plain',
+                    didDrawPage
+                });
+                startY = (doc as any).lastAutoTable.finalY;
+            }
+
+            (doc as any).autoTable({
+                startY,
+                head: [[{ content: group.name, colSpan: 2, styles: { fillColor: '#F5F5F5', textColor: '#212121' } }]],
+                body: body,
+                theme: 'grid',
+                didDrawPage
+            });
             startY = (doc as any).lastAutoTable.finalY + 8;
         });
     });
@@ -175,21 +154,18 @@ const generateDetailedStudentReportsPDF = (doc: jsPDF, viewModel: any, teacherDa
         const didDrawPage = didDrawPageCallback(doc, `Informe Alumno: ${service.name}`, teacherData, instituteData);
         let startY = 35;
         const studentGroup = practiceGroups.find((g: PracticeGroup) => g.studentIds.includes(student.id));
-        const studentRole = serviceRoles.find((r: ServiceRole) => r.id === service.studentRoles.find((sr: any) => sr.studentId === student.id)?.roleId);
+        const studentRole = serviceRoles.find((r: ServiceRole) => r.id === (service.studentRoles.find((sr: any) => sr.studentId === student.id) || {}).roleId);
 
         (doc as any).autoTable({ startY, head: [['Alumno', 'Grupo', 'Puesto']], body: [[`${student.apellido1} ${student.apellido2}, ${student.nombre}`, studentGroup?.name || 'N/A', studentRole?.name || 'N/A']], theme: 'grid', headStyles: { fillColor: [41, 128, 185] }, didDrawPage });
         startY = (doc as any).lastAutoTable.finalY + 8;
 
-        Object.entries(evaluation.preService).forEach(([date, preServiceDay]: [string, any]) => {
+        Object.entries(evaluation.preService || {}).forEach(([date, preServiceDay]: [string, any]) => {
             const indEval = preServiceDay.individualEvaluations[student.id];
             if (!indEval) return;
-            const body = [
-                ['Asistencia', indEval.attendance ? 'Sí' : 'No'],
-                ['Fichas', indEval.hasFichas ? 'Sí' : 'No'],
-                ['Uniforme', indEval.hasUniforme ? 'Sí' : 'No'],
-                ['Material', indEval.hasMaterial ? 'Sí' : 'No'],
+            const body: any[][] = [
+                ['Asistencia', indEval.attendance ? 'Sí' : 'No'], ['Fichas', indEval.hasFichas ? 'Sí' : 'No'], ['Uniforme', indEval.hasUniforme ? 'Sí' : 'No'], ['Material', indEval.hasMaterial ? 'Sí' : 'No'],
                 ...PRE_SERVICE_BEHAVIOR_ITEMS.map(item => [item.label, BEHAVIOR_RATING_MAP.find(r => r.value === indEval.behaviorScores[item.id])?.symbol || '-']),
-                ['Observaciones', indEval.observations || 'Sin observaciones']
+                [{ content: indEval.observations || 'Sin observaciones', colSpan: 2, styles: { fontStyle: 'italic' } }]
             ];
             (doc as any).autoTable({ startY, head: [[`Evaluación Pre-Servicio (${new Date(date + 'T12:00:00Z').toLocaleDateString('es-ES')})`, '']], body, theme: 'grid', headStyles: { fillColor: [34, 139, 34] }, didDrawPage });
             startY = (doc as any).lastAutoTable.finalY + 8;
@@ -198,11 +174,10 @@ const generateDetailedStudentReportsPDF = (doc: jsPDF, viewModel: any, teacherDa
         const serviceDayIndEval = evaluation.serviceDay.individualScores[student.id];
         if (serviceDayIndEval) {
             const totalScore = (serviceDayIndEval.scores || []).reduce((sum: number, s: number | null) => sum + (s || 0), 0);
-            const body = INDIVIDUAL_EVALUATION_ITEMS.map((item, i) => [item.label, serviceDayIndEval.scores[i]?.toFixed(2) ?? '-']);
+            const body: any[][] = INDIVIDUAL_EVALUATION_ITEMS.map((item, i) => [item.label, serviceDayIndEval.scores[i]?.toFixed(2) ?? '-']);
             body.push([{content: 'TOTAL', styles: {fontStyle: 'bold'}}, {content: totalScore.toFixed(2), styles: {fontStyle: 'bold'}}]);
-            body.push(['Observaciones', serviceDayIndEval.observations || 'Sin observaciones']);
+            body.push([{ content: serviceDayIndEval.observations || 'Sin observaciones', colSpan: 2, styles: { fontStyle: 'italic' } }]);
             (doc as any).autoTable({ startY, head: [['Evaluación Individual (Día Servicio)', 'Puntuación']], body, theme: 'grid', headStyles: { fillColor: [218, 165, 32] }, didDrawPage });
-            startY = (doc as any).lastAutoTable.finalY + 8;
         }
     });
 };
@@ -212,19 +187,16 @@ const generateServiceReportPDF = (doc: jsPDF, viewModel: any, teacherData: Teach
     const didDrawPage = didDrawPageCallback(doc, `Informe Final: ${service.name}`, teacherData, instituteData);
     let startY = 35;
 
-    (doc as any).autoTable({ startY, head: [[`Resumen del Servicio: ${service.name}`]], theme: 'plain', didDrawPage });
-    startY = (doc as any).lastAutoTable.finalY + 8;
-    
-    (doc as any).autoTable({ startY, head: [['Evaluación Grupal']], theme: 'plain', headStyles: {fontStyle: 'bold'}, didDrawPage });
-    startY = (doc as any).lastAutoTable.finalY;
+    (doc as any).autoTable({ startY, head: [[`Evaluación Grupal - ${service.name}`]], theme: 'plain', headStyles: {fontStyle: 'bold', fontSize: 14}, didDrawPage });
+    startY = (doc as any).lastAutoTable.finalY + 2;
     
     participatingGroups.forEach((group: PracticeGroup) => {
         const groupEval = evaluation.serviceDay.groupScores[group.id];
         if(!groupEval) return;
         const totalScore = (groupEval.scores || []).reduce((sum: number, s: number | null) => sum + (s || 0), 0);
-        const body = GROUP_EVALUATION_ITEMS.map((item, i) => [item.label, groupEval.scores[i]?.toFixed(2) ?? '-']);
+        const body: any[][] = GROUP_EVALUATION_ITEMS.map((item, i) => [item.label, groupEval.scores[i]?.toFixed(2) ?? '-']);
         body.push([{content: 'TOTAL', styles: {fontStyle: 'bold'}}, {content: totalScore.toFixed(2), styles: {fontStyle: 'bold'}}]);
-        body.push(['Observaciones', groupEval.observations || 'Sin observaciones']);
+        body.push([{ content: groupEval.observations || 'Sin observaciones', colSpan: 2, styles: { fontStyle: 'italic' } }]);
         (doc as any).autoTable({ startY, head: [[group.name, 'Puntuación']], body, theme: 'grid', headStyles: { fillColor: [41, 128, 185] }, didDrawPage });
         startY = (doc as any).lastAutoTable.finalY + 8;
     });
