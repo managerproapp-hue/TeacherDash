@@ -287,19 +287,45 @@ const ServiceEvaluationView: React.FC<ServiceEvaluationViewProps> = ({ service, 
     }, [onEvaluationChange]);
 
     const handleAddPreServiceDay = () => {
-        const dateStr = prompt("Introduce la fecha para el nuevo día de pre-servicio (YYYY-MM-DD):");
-        if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            deepCloneAndUpdate(draft => {
-                if (!draft.preService) draft.preService = {};
-                if (!draft.preService[dateStr]) {
-                    draft.preService[dateStr] = { groupObservations: {}, individualEvaluations: {} };
-                }
-            });
-            // Set the new date as active immediately, avoiding race conditions.
-            setActivePreServiceDate(dateStr);
-        } else if (dateStr) {
-            alert("Formato de fecha inválido.");
+        // Calculate suggested date
+        let suggestedDate = '';
+        if (preServiceDates.length > 0) {
+            const latestDateStr = preServiceDates[preServiceDates.length - 1];
+            // Using UTC to avoid timezone issues with date manipulation
+            const latestDate = new Date(latestDateStr);
+            latestDate.setUTCDate(latestDate.getUTCDate() + 1);
+            suggestedDate = latestDate.toISOString().split('T')[0];
+        } else {
+            // Fallback: If no pre-service days exist, suggest the Monday of the service week.
+            const serviceDate = new Date(service.date);
+            const day = serviceDate.getUTCDay();
+            const diff = serviceDate.getUTCDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+            const monday = new Date(serviceDate.setUTCDate(diff));
+            suggestedDate = monday.toISOString().split('T')[0];
         }
+
+        const dateStr = prompt("Introduce la fecha para el nuevo día de pre-servicio (YYYY-MM-DD):", suggestedDate);
+
+        if (!dateStr) return; // User clicked cancel
+
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            alert("Formato de fecha inválido. Por favor, usa YYYY-MM-DD.");
+            return;
+        }
+        
+        // Check if the date already exists.
+        if (evaluation.preService && evaluation.preService[dateStr]) {
+             alert(`El día de pre-servicio para la fecha ${dateStr} ya existe.`);
+             setActivePreServiceDate(dateStr); // Just switch to it
+             return;
+        }
+
+        deepCloneAndUpdate(draft => {
+            if (!draft.preService) draft.preService = {};
+            draft.preService[dateStr] = { groupObservations: {}, individualEvaluations: {} };
+        });
+        
+        setActivePreServiceDate(dateStr);
     };
 
     const handlePreServiceIndividualUpdate = (date: string, studentId: string, field: string, value: any, behaviorItemId?: string) => {
