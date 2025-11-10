@@ -82,13 +82,13 @@ const generateStudentPdf = (
 
     const studentServices = services.map(service => {
         const evalData = serviceEvaluations.find(e => e.serviceId === service.id);
-        const indEval = evalData?.serviceDay.individualScores[student.id];
+        const indEval = evalData?.serviceDay?.individualScores?.[student.id];
         if (!indEval || !indEval.attendance) return null;
         const indScore = (indEval.scores || []).reduce((sum, s) => sum + (s || 0), 0);
         const studentGroup = practiceGroups.find(pg => pg.studentIds.includes(student.id));
         let groupScore: number | null = null;
         if(studentGroup) {
-            const groupEval = evalData?.serviceDay.groupScores[studentGroup.id];
+            const groupEval = evalData?.serviceDay?.groupScores?.[studentGroup.id];
             if(groupEval) groupScore = (groupEval.scores || []).reduce((sum, s) => sum + (s || 0), 0);
         }
         return [new Date(service.date).toLocaleDateString('es-ES'), service.name, indScore.toFixed(2), groupScore?.toFixed(2) ?? '-'];

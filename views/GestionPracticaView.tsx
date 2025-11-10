@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
-import { Service, ServiceEvaluation, Elaboration } from '../types';
-import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon } from '../components/icons';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import { Service, ServiceEvaluation, Elaboration, Student, PracticeGroup, ServiceRole, TeacherData, InstituteData } from '../types';
+import { PlusIcon, TrashIcon, SaveIcon, ChefHatIcon, FileTextIcon } from '../components/icons';
 import { useAppContext } from '../context/AppContext';
 
 const ServiceEvaluationView = lazy(() => import('./ServiceEvaluationView'));
@@ -11,13 +13,168 @@ interface GestionPracticaViewProps {
     clearInitialServiceContext: () => void;
 }
 
+
+// --- PDF Generation Logic ---
+const generateWeeklyFollowUpPDF = (
+    service: Service,
+    evaluation: ServiceEvaluation,
+    allStudents: Student[],
+    practiceGroups: PracticeGroup[],
+    serviceRoles: ServiceRole[],
+    teacherData: TeacherData,
+    instituteData: InstituteData
+) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageMargin = 15;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const contentWidth = pageWidth - (pageMargin * 2);
+    const contentHeight = pageHeight - (pageMargin * 2);
+
+    const addImageToPdf = (imageData: string | null, x: number, y: number, w: number, h: number) => {
+        if (imageData && imageData.startsWith('data:image')) {
+            try {
+                const imageType = imageData.substring(imageData.indexOf('/') + 1, imageData.indexOf(';'));
+                doc.addImage(imageData, imageType.toUpperCase(), x, y, w, h);
+            } catch (e) { console.error("Error adding image:", e); }
+        }
+    };
+
+    const addPageHeaderAndFooter = (pageNumber: number, totalPages: number) => {
+        doc.setFont('helvetica', 'normal');
+        // HEADER
+        addImageToPdf(instituteData.logo, pageMargin, 10, 15, 15);
+        addImageToPdf(teacherData.logo, pageWidth - pageMargin - 15, 10, 15, 15);
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text("Ficha de Seguimiento: " + service.name, pageWidth / 2, 15, { align: 'center' });
+        doc.text(new Date(service.date).toLocaleDateString('es-ES'), pageWidth / 2, 20, { align: 'center' });
+        
+        // FOOTER
+        doc.setFontSize(8);
+        doc.text(`${instituteData.name || 'IES La Flota'} - ${teacherData.name || 'Juan Codina Barranco'}`, pageMargin, pageHeight - 10);
+        doc.text(`Página ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text(new Date().toLocaleDateString('es-ES'), pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
+    };
+
+    const participatingGroupIds = new Set([...service.assignedGroups.comedor, ...service.assignedGroups.takeaway]);
+    const participatingGroups = practiceGroups.filter(g => participatingGroupIds.has(g.id));
+
+    let currentPage = 1;
+    let y = 30;
+
+    addPageHeaderAndFooter(currentPage, 0); // Initial header
+
+    participatingGroups.forEach((group, groupIndex) => {
+        const studentsInGroup = allStudents.filter(s => group.studentIds.includes(s.id)).sort((a,b) => a.apellido1.localeCompare(b.apellido1));
+        const serviceArea = service.assignedGroups.comedor.includes(group.id) ? "COMEDOR" : "TAKEAWAY";
+
+        // Group Header
+        if (y + 20 > pageHeight - pageMargin) {
+            doc.addPage();
+            currentPage++;
+            y = 30;
+            addPageHeaderAndFooter(currentPage, 0);
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text(`${group.name} - ${serviceArea}`, pageMargin, y);
+        y += 8;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text("Observaciones Generales del Grupo:", pageMargin, y);
+        y += 5;
+        const groupObs = evaluation.serviceDay.groupScores[group.id]?.observations || '';
+        doc.rect(pageMargin, y, contentWidth, 20);
+        doc.text(groupObs, pageMargin + 2, y + 5, { maxWidth: contentWidth - 4 });
+        y += 25;
+
+        studentsInGroup.forEach((student, studentIndex) => {
+            const studentBlockHeight = 75;
+             if (y + studentBlockHeight > pageHeight - pageMargin) {
+                doc.addPage();
+                currentPage++;
+                y = 30;
+                addPageHeaderAndFooter(currentPage, 0);
+                 doc.setFont('helvetica', 'bold');
+                 doc.setFontSize(14);
+                 doc.text(`${group.name} - ${serviceArea} (cont.)`, pageMargin, y);
+                 y += 10;
+            }
+            
+            doc.setDrawColor(150);
+            doc.line(pageMargin, y - 5, pageWidth - pageMargin, y - 5);
+
+            // Student Name and Role
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.text(`${student.apellido1} ${student.apellido2}, ${student.nombre}`, pageMargin, y);
+            const roleId = service.studentRoles.find(sr => sr.studentId === student.id)?.roleId;
+            const roleName = serviceRoles.find(r => r.id === roleId)?.name || 'Sin asignar';
+            doc.text(roleName, pageWidth - pageMargin, y, { align: 'right' });
+            y += 8;
+
+            const col1X = pageMargin;
+            const col2X = pageWidth / 2;
+            const colWidth = (pageWidth / 2) - pageMargin - 2;
+            let currentY = y;
+
+            // --- Día Previo ---
+            const latestPreServiceDate = Object.keys(evaluation.preService).sort().pop();
+            const preServiceEval = latestPreServiceDate ? evaluation.preService[latestPreServiceDate]?.individualEvaluations[student.id] : null;
+            
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.text("DÍA PREVIO", col1X, currentY);
+            currentY += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Asistencia: Sí [${preServiceEval?.attendance ? 'X' : ' '}] No [${preServiceEval?.attendance ? ' ' : 'X'}]`, col1X, currentY); currentY += 5;
+            doc.text(`Uniforme completo: [${preServiceEval?.hasUniforme ? 'X' : ' '}]`, col1X, currentY); currentY += 5;
+            doc.text(`Fichas técnicas: [${preServiceEval?.hasFichas ? 'X' : ' '}]`, col1X, currentY); currentY += 5;
+            doc.text(`Material requerido: [${preServiceEval?.hasMaterial ? 'X' : ' '}]`, col1X, currentY); currentY += 8;
+            doc.rect(col1X, currentY, colWidth, 25);
+            doc.text(preServiceEval?.observations || '', col1X + 2, currentY + 5, { maxWidth: colWidth - 4 });
+
+            // --- Día de Servicio ---
+            const serviceDayEval = evaluation.serviceDay.individualScores[student.id];
+            currentY = y; // Reset Y for the second column
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.text("DÍA DE SERVICIO", col2X, currentY);
+            currentY += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Asistencia: Sí [${serviceDayEval?.attendance ? 'X' : ' '}] No [${serviceDayEval?.attendance ? ' ' : 'X'}]`, col2X, currentY); currentY += 5;
+            // NOTE: This data is not collected in the app, so checkboxes are left empty as per the template.
+            doc.text(`Uniforme completo: [ ]`, col2X, currentY); currentY += 5;
+            doc.text(`Fichas técnicas: [ ]`, col2X, currentY); currentY += 5;
+            doc.text(`Material requerido: [ ]`, col2X, currentY); currentY += 8;
+            doc.rect(col2X, currentY, colWidth, 25);
+            doc.text(serviceDayEval?.observations || '', col2X + 2, currentY + 5, { maxWidth: colWidth - 4 });
+            
+            y += studentBlockHeight;
+        });
+    });
+
+    // Final pass to update total pages in footer
+    const totalPages = doc.internal.pages.length;
+    for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        addPageHeaderAndFooter(i, totalPages);
+    }
+    
+    doc.save(`Ficha_Seguimiento_${service.name.replace(/ /g, '_')}.pdf`);
+};
+
 const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({ 
     initialServiceId, initialServiceTab, clearInitialServiceContext 
 }) => {
     const {
         students, practiceGroups, services, serviceEvaluations, serviceRoles, 
         entryExitRecords, handleCreateService: contextCreateService, 
-        handleSaveServiceAndEvaluation, handleDeleteService
+        handleSaveServiceAndEvaluation, handleDeleteService,
+        teacherData, instituteData
     } = useAppContext();
 
     const [selectedServiceId, setSelectedServiceId] = useState<string | null>(initialServiceId);
@@ -70,6 +227,12 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
     const handleSave = () => {
         if (editedService && editedEvaluation) {
             handleSaveServiceAndEvaluation(editedService, editedEvaluation);
+        }
+    };
+    
+    const handleGeneratePdf = () => {
+        if (editedService && editedEvaluation) {
+            generateWeeklyFollowUpPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         }
     };
     
@@ -172,8 +335,9 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                          <input type="date" value={editedService.date} onChange={(e) => handleServiceFieldChange('date', e.target.value)} className="text-gray-500 mt-1 block bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-500 rounded-md"/>
                     </div>
                     <div className="flex items-center space-x-2">
+                        <button onClick={handleGeneratePdf} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Generar Ficha Semanal</button>
                         <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition"><SaveIcon className="w-5 h-5 mr-1" /> Guardar</button>
-                         <button onClick={handleDelete} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition"><TrashIcon className="w-5 h-5" /></button>
+                        <button onClick={handleDelete} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition"><TrashIcon className="w-5 h-5" /></button>
                     </div>
                 </header>
 
