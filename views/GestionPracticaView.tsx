@@ -24,6 +24,18 @@ const generatePlanningPDF = (
     teacherData: TeacherData,
     instituteData: InstituteData
 ) => {
+    // --- NORMALIZATION (THE FIX) ---
+    const normalizedService = {
+        ...service,
+        assignedGroups: service.assignedGroups ?? { comedor: [], takeaway: [] },
+        elaborations: service.elaborations ?? { comedor: [], takeaway: [] },
+        studentRoles: service.studentRoles ?? [],
+    };
+    normalizedService.assignedGroups.comedor = normalizedService.assignedGroups.comedor ?? [];
+    normalizedService.assignedGroups.takeaway = normalizedService.assignedGroups.takeaway ?? [];
+    normalizedService.elaborations.comedor = normalizedService.elaborations.comedor ?? [];
+    normalizedService.elaborations.takeaway = normalizedService.elaborations.takeaway ?? [];
+
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageMargin = 15;
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -45,7 +57,7 @@ const generatePlanningPDF = (
         doc.setTextColor(120);
         doc.text(`${instituteData.name || 'IES La Flota'} - ${teacherData.name || 'Juan Codina Barranco'}`, pageMargin, pageHeight - 10);
         doc.text(`Página ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-        const dateStr = new Date(service.date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const dateStr = new Date(normalizedService.date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
         doc.text(dateStr, pageWidth - pageMargin, pageHeight - 10, { align: 'right' });
     };
 
@@ -65,17 +77,17 @@ const generatePlanningPDF = (
     y += 5;
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text(`Planning: Servicio ${service.name}`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`Planning: Servicio ${normalizedService.name}`, pageWidth / 2, y, { align: 'center' });
     y += 7;
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    const serviceDate = new Date(service.date + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const serviceDate = new Date(normalizedService.date + 'T12:00:00Z').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
     doc.text(`Comienzo curso (${serviceDate})`, pageWidth / 2, y, { align: 'center' });
     y += 15;
 
     // --- SERVICE LEADERS ---
     const leaderRoles = serviceRoles.filter(r => r.type === 'leader');
-    const leaderAssignments = service.studentRoles
+    const leaderAssignments = normalizedService.studentRoles
         .filter(sr => leaderRoles.some(lr => lr.id === sr.roleId))
         .map(sr => {
             const student = allStudents.find(s => s.id === sr.studentId);
@@ -122,7 +134,7 @@ const generatePlanningPDF = (
                 .sort((a,b) => a.apellido1.localeCompare(b.apellido1));
                 
             const studentTableBody = studentsInGroup.map(student => {
-                const roleId = service.studentRoles.find(sr => sr.studentId === student.id)?.roleId;
+                const roleId = normalizedService.studentRoles.find(sr => sr.studentId === student.id)?.roleId;
                 const roleName = serviceRoles.find(r => r.id === roleId)?.name || 'Sin Asignar';
                 const studentName = `${student.apellido1} ${student.apellido2}, ${student.nombre}`.toUpperCase();
                 return [studentName, roleName];
@@ -161,11 +173,11 @@ const generatePlanningPDF = (
         });
     };
     
-    drawSection('SERVICIO DE COMEDOR', service.assignedGroups.comedor, service.elaborations.comedor);
-    drawSection('SERVICIO DE TAKEAWAY', service.assignedGroups.takeaway, service.elaborations.takeaway);
+    drawSection('SERVICIO DE COMEDOR', normalizedService.assignedGroups.comedor, normalizedService.elaborations.comedor);
+    drawSection('SERVICIO DE TAKEAWAY', normalizedService.assignedGroups.takeaway, normalizedService.elaborations.takeaway);
     
     addFooter();
-    doc.save(`Planning_${service.name.replace(/ /g, '_')}.pdf`);
+    doc.save(`Planning_${normalizedService.name.replace(/ /g, '_')}.pdf`);
 };
 
 const generateServiceReportPDF = (
@@ -374,8 +386,6 @@ const generateDetailedStudentReportsPDF = (
             doc.addPage();
         }
         
-        addPageHeaderAndFooter({ pageNumber: doc.internal.getCurrentPageInfo().pageNumber });
-
         let y = 35; 
         
         // --- STUDENT INFO ---
@@ -425,8 +435,9 @@ const generateDetailedStudentReportsPDF = (
                     y += 4;
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(80);
-                    doc.text(preEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y = doc.autoTable.previous.finalY + 10;
+                    const splitText = doc.splitTextToSize(preEval.observations, pageWidth - (pageMargin * 2));
+                    doc.text(splitText, pageMargin, y);
+                    y += (splitText.length * 4); 
                 }
                  y += 5;
             }
@@ -461,8 +472,9 @@ const generateDetailedStudentReportsPDF = (
                     y += 4;
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(80);
-                    doc.text(serviceDayEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
-                    y = doc.autoTable.previous.finalY + 10;
+                    const splitText = doc.splitTextToSize(serviceDayEval.observations, pageWidth - (pageMargin * 2));
+                    doc.text(splitText, pageMargin, y);
+                    y += (splitText.length * 4);
                 }
             }
         }
@@ -504,13 +516,100 @@ const generateDetailedStudentReportsPDF = (
                 y += 4;
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(80);
-                doc.text(groupEval.observations, pageMargin, y, { maxWidth: pageWidth - (pageMargin * 2) });
+                const splitText = doc.splitTextToSize(groupEval.observations, pageWidth - (pageMargin * 2));
+                doc.text(splitText, pageMargin, y);
             }
         }
     });
     
     doc.save(`Informe_Detallado_${service.name.replace(/ /g, '_')}.pdf`);
-}
+};
+
+// --- NEW TRACKING SHEET PDF ---
+const generateTrackingSheetPDF = (
+    service: Service,
+    allStudents: Student[],
+    practiceGroups: PracticeGroup[],
+    serviceRoles: ServiceRole[],
+    teacherData: TeacherData,
+    instituteData: InstituteData
+) => {
+    // --- NORMALIZATION ---
+    const normalizedService = {
+        ...service,
+        assignedGroups: service.assignedGroups ?? { comedor: [], takeaway: [] },
+        studentRoles: service.studentRoles ?? [],
+    };
+    normalizedService.assignedGroups.comedor = normalizedService.assignedGroups.comedor ?? [];
+    normalizedService.assignedGroups.takeaway = normalizedService.assignedGroups.takeaway ?? [];
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageMargin = 15;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let pageCount = 1;
+
+    const addPageHeaderAndFooter = (data: any) => {
+        doc.setFont('helvetica', 'normal');
+        // HEADER
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Ficha de Seguimiento: ${normalizedService.name}`, pageWidth / 2, 20, { align: 'center' });
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        const serviceDate = new Date(normalizedService.date + 'T12:00:00Z').toLocaleDateString('es-ES');
+        doc.text(serviceDate, pageWidth / 2, 27, { align: 'center' });
+
+        // FOOTER
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        doc.text(`${instituteData.name || 'IES La Flota'} - ${teacherData.name || 'Juan Codina Barranco'}`, pageMargin, pageHeight - 10);
+        doc.text(`Página ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    };
+
+    const participatingGroupIds = new Set([...normalizedService.assignedGroups.comedor, ...normalizedService.assignedGroups.takeaway]);
+    const participatingGroups = practiceGroups.filter(g => participatingGroupIds.has(g.id));
+
+    participatingGroups.forEach((group, index) => {
+        if (index > 0) doc.addPage();
+        
+        let y = 35;
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Grupo: ${group.name}`, pageMargin, y);
+        y += 10;
+        
+        const studentsInGroup = allStudents.filter(s => group.studentIds.includes(s.id)).sort((a,b) => a.apellido1.localeCompare(b.apellido1));
+        const body = studentsInGroup.map(student => {
+             const roleId = normalizedService.studentRoles.find(sr => sr.studentId === student.id)?.roleId;
+             const roleName = serviceRoles.find(r => r.id === roleId)?.name || 'Sin Asignar';
+             return [`${student.apellido1} ${student.apellido2}, ${student.nombre}`, roleName, '', ''];
+        });
+        
+        (doc as any).autoTable({
+            startY: y,
+            head: [['Alumno', 'Puesto', 'Evaluación Individual (Notas)', 'Comentarios Grupo']],
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [79, 70, 229] }, // Indigo
+            didDrawPage: addPageHeaderAndFooter,
+            columnStyles: {
+                2: { cellWidth: 40 },
+                3: { cellWidth: 40 }
+            }
+        });
+
+        y = (doc as any).lastAutoTable.finalY + 10;
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Observaciones Generales del Grupo:', pageMargin, y);
+        y += 5;
+        doc.setDrawColor(200);
+        doc.rect(pageMargin, y, pageWidth - (pageMargin*2), 60);
+    });
+    
+    doc.save(`Ficha_Seguimiento_${normalizedService.name.replace(/ /g, '_')}.pdf`);
+};
 
 
 const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({ 
@@ -604,6 +703,19 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
         }
     };
     
+    const handleGenerateTrackingSheet = () => {
+        if (!editedService) {
+            addToast('No hay un servicio seleccionado.', 'error');
+            return;
+        }
+        try {
+            generateTrackingSheetPDF(editedService, students, practiceGroups, serviceRoles, teacherData, instituteData);
+        } catch (error) {
+            console.error("Fallo al generar la ficha de seguimiento:", error);
+            addToast('Error al generar la ficha. Revisa los datos del servicio.', 'error');
+        }
+    };
+
     const handleGenerateReport = () => {
         if (!editedService || !editedEvaluation) {
             addToast('No hay datos de servicio o evaluación para generar el informe.', 'error');
@@ -613,7 +725,7 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
             generateServiceReportPDF(editedService, editedEvaluation, students, practiceGroups, serviceRoles, teacherData, instituteData);
         } catch (error) {
             console.error("Fallo al generar el PDF del informe:", error);
-            addToast('Error al generar el informe. Revisa que todos los datos de evaluación estén completos.', 'error');
+            addToast('Error al generar el informe. Revisa los datos de evaluación estén completos.', 'error');
         }
     };
 
@@ -737,9 +849,10 @@ const GestionPracticaView: React.FC<GestionPracticaViewProps> = ({
                         </div>
                     </div>
                     <div className="flex items-center space-x-2 flex-wrap gap-2">
+                        <button onClick={handleGenerateTrackingSheet} className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Ficha Seguimiento</button>
+                        <button onClick={handleGeneratePlanningPdf} className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"><PrinterIcon className="w-5 h-5 mr-1" /> Planning</button>
                         <button onClick={handleGenerateStudentReports} className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition"><UsersIcon className="w-5 h-5 mr-1" /> Informe por Alumno</button>
                         {isLocked && <button onClick={handleGenerateReport} className="flex items-center bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition"><FileTextIcon className="w-5 h-5 mr-1" /> Informe de Servicio</button>}
-                        <button onClick={handleGeneratePlanningPdf} className="flex items-center bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition"><PrinterIcon className="w-5 h-5 mr-1" /> Planning</button>
                         {!isLocked && <button onClick={handleSave} className="flex items-center bg-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-600 transition"><SaveIcon className="w-5 h-5 mr-1" /> Guardar</button>}
                         {!isLocked && <button onClick={handleDelete} className="flex items-center bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition"><TrashIcon className="w-5 h-5" /></button>}
                     </div>
